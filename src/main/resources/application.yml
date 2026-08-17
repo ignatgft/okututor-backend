@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: okututor-backend
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:h2:mem:okututor;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false
+    driverClassName: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:okututor-local-development-secret-key-change-me-1234567890}
+    expiration-millis: ${JWT_EXPIRATION_MILLIS:604800000}
+  meeting:
+    base-url: ${MEETING_BASE_URL:https://meet.okututor.local}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
