@@ -1,4 +1,21 @@
+# DEV-профиль: расслабленные настройки, Mailpit/локальный Postgres, seed включён.
+# Секреты приходят из .env (см. spring.config.import в application.yml).
 spring:
-  jpa:
-    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  rate-limit:
+    login-per-minute: ${RATE_LIMIT_LOGIN:100}
+  seed:
+    # демо-данные уместны только здесь
+    enabled: ${APP_SEED_ENABLED:true}
+
+logging:
+  level:
+    com.okututor.backend: DEBUG

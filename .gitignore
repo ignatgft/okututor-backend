@@ -1,10 +1,25 @@
 target/
+!.mvn/wrapper/maven-wrapper.jar
 .idea/
+*.iml
 .vscode/
 .classpath
 .project
 .settings/
-*.iml
-*.log
-.DS_Store
+data/
+uploads/
 
+# секреты окружения: в Git только шаблон .env.example
+.env
+.env.*
+!.env.example
+
+# ключи и сертификаты
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+*.log
+dependency-reduced-pom.xml

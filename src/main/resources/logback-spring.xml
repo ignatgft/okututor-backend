@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Лог-конфигурация Okututor backend. requestId прокидывается в MDC фильтром
+  RequestCorrelationFilter и выводится в каждой строке (%X{requestId}).
+
+  Структурированный (JSON) вывод для централизованного сбора логов включается
+  активным профилем "jsonlog":  SPRING_PROFILES_ACTIVE=prod,jsonlog
+-->
+<configuration>
+  <property name="CONSOLE_LOG_PATTERN"
+            value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{40} [%X{requestId:-}] - %msg%n"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+  </appender>
+
+  <springProfile name="jsonlog">
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="!jsonlog">
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+</configuration>

@@ -1,0 +1,77 @@
+name: okututor-backend
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # креды БД приходят из .env / окружения; дефолты — только для локального dev
+      POSTGRES_DB: ${DB_NAME:-okututor}
+      POSTGRES_USER: ${DB_USER:-okututor}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-okututor}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U okututor -d okututor"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.22
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  backend:
+    build: .
+    # service name `backend` matches the frontend nginx proxy_pass target
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-okututor}
+      DB_USER: ${DB_USER:-okututor}
+      DB_PASSWORD: ${DB_PASSWORD:-okututor}
+      # почта: по умолчанию Mailpit (локальный перехват), при наличии .env — Resend SMTP
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USER: ${MAIL_USER:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: "${MAIL_FROM:-Okututor <no-reply@okututor.local>}"
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-false}
+      APP_MAIL_ENABLED: "true"
+      APP_CORS_ORIGINS: http://localhost:5173,http://localhost:8081
+      FRONTEND_URL: http://localhost:8081
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-staging-and-prod-0123456789abcdef}
+      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-wss://livekit:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret-change-me-012345678901234}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APP_RATE_LIMIT_USE_REDIS: "true"
+      SPRING_DATA_REDIS_HOST: redis
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/app/data
+
+volumes:
+  pgdata:
+  uploads:

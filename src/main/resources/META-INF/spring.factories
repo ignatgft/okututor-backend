@@ -1,0 +1,3 @@
+# Ранняя валидация production-ENV (см. ProdEnvValidator)
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.okututor.backend.common.config.ProdEnvValidator

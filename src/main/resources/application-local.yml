@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/okututor
+    username: okututor
+    password: okututor
+  flyway:
+    locations: classpath:db/migration
+    validate-on-migrate: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:3000
+  frontend-url: http://localhost:5173
+  jwt:
+    secret: dev-only-secret-change-me-0123456789abcdef0123456789abcdef
+    access-ttl-minutes: 15
+    refresh-ttl-days: 30
+    refresh-grace-seconds: 30
+  livekit:
+    api-key: devkey
+    api-secret: devsecret-change-me-012345678901234
+    ws-url: wss://localhost:7880
+    token-ttl-minutes: 30
+  mail:
+    enabled: true
+  rate-limit:
+    enabled: true
+    use-redis: false
+  seed:
+    enabled: true
+  storage:
+    local-dir: ./data/uploads
+    public-base-url: /api/v1/files

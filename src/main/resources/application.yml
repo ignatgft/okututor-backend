@@ -1,38 +1,198 @@
 spring:
   application:
     name: okututor-backend
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # секреты дев-окружения (.env в корне проекта) читаются при любом профиле;
+  # OS-переменные окружения всегда приоритетнее
   config:
     import: optional:file:.env[.properties]
+
   datasource:
-    url: jdbc:h2:mem:okututor;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false
-    driverClassName: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:okututor}
+    username: ${DB_USER:okututor}
+    password: ${DB_PASSWORD:okututor}
+    hikari:
+      maximum-pool-size: 10
+
   jpa:
     hibernate:
-      ddl-auto: create-drop
-    show-sql: true
+      ddl-auto: validate
+    open-in-view: false
     properties:
       hibernate:
-        format_sql: true
-  h2:
-    console:
-      enabled: true
-  jackson:
-    property-naming-strategy: SNAKE_CASE
+        jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: false
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      # пусто = без авторизации (локальный Redis); в prod задаётся REDIS_PASSWORD
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+
+  servlet:
+    multipart:
+      max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:11MB}
+      max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:12MB}
+
+
+  mail:
+    # по умолчанию — Resend SMTP; для локальной разработки переопределяется
+    # через .env (MAIL_HOST=localhost, MAIL_PORT=1025 -> Mailpit)
+    host: ${MAIL_HOST:smtp.resend.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:resend}
+    password: ${RESEND_API_KEY:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            # placeholders enable local startup without real credentials;
+            # set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to activate Google sign-in
+            client-id: ${GOOGLE_CLIENT_ID:placeholder-google-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:placeholder-google-client-secret}
+            # должен ТОЧНО совпадать с одним из Authorized redirect URIs в Google Console
+            redirect-uri: ${GOOGLE_REDIRECT_URI:{baseUrl}/login/oauth2/code/google}
+            scope: openid,profile,email
+        provider:
+          google:
+            user-name-attribute: sub
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+  # корректное завершение in-flight запросов при деплое
+  shutdown: graceful
 
-app:
-  jwt:
-    secret: ${JWT_SECRET:okututor-local-development-secret-key-change-me-1234567890}
-    expiration-millis: ${JWT_EXPIRATION_MILLIS:604800000}
-  meeting:
-    base-url: ${MEETING_BASE_URL:https://meet.okututor.local}
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
 
 springdoc:
-  api-docs:
-    path: /v3/api-docs
+  api-docs.path: /v3/api-docs
+  swagger-ui.path: /swagger-ui.html
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  jwt:
+    # значение только для dev; ОБЯЗАТЕЛЬНО переопределить в staging/production через JWT_SECRET
+    secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef0123456789abcdef}
+    access-ttl-minutes: 15
+    refresh-ttl-days: 30
+    refresh-grace-seconds: 30
+  livekit:
+    api-key: ${LIVEKIT_API_KEY:devkey}
+    api-secret: ${LIVEKIT_API_SECRET:devsecret-change-me-012345678901234}
+    ws-url: ${LIVEKIT_WS_URL:wss://localhost:7880}
+    token-ttl-minutes: 30
+  mail:
+    enabled: ${APP_MAIL_ENABLED:false}
+    from: ${MAIL_FROM:Okututor <no-reply@okututor.local>}
+  rate-limit:
+    enabled: true
+    use-redis: false
+    login-per-minute: 10
+    register-per-hour: 20
+    verify-per-hour: 30
+    resend-per-minute: 1
+    forgot-password-per-hour: 10
+  seed:
+    enabled: ${APP_SEED_ENABLED:true}
+  storage:
+    local-dir: ${APP_STORAGE_DIR:./data/uploads}
+    public-base-url: ${APP_STORAGE_PUBLIC_BASE:/api/v1/files}
+  media:
+    provider: ${STORAGE_PROVIDER:local}
+    format: ${MEDIA_IMAGE_FORMAT:webp}
+    avatar-max-width: ${MEDIA_AVATAR_MAX_WIDTH:512}
+    avatar-max-height: ${MEDIA_AVATAR_MAX_HEIGHT:512}
+    avatar-quality: ${MEDIA_AVATAR_QUALITY:82}
+    course-cover-max-width: ${MEDIA_COURSE_COVER_MAX_WIDTH:1600}
+    course-cover-max-height: ${MEDIA_COURSE_COVER_MAX_HEIGHT:900}
+    course-cover-quality: ${MEDIA_COURSE_COVER_QUALITY:80}
+    profile-max-width: ${MEDIA_PROFILE_MAX_WIDTH:1200}
+    profile-max-height: ${MEDIA_PROFILE_MAX_HEIGHT:1200}
+    profile-quality: ${MEDIA_PROFILE_QUALITY:82}
+    max-avatar-size: ${MEDIA_MAX_AVATAR_SIZE:5242880}
+    max-course-cover-size: ${MEDIA_MAX_COURSE_COVER_SIZE:10485760}
+    max-profile-size: ${MEDIA_MAX_PROFILE_SIZE:10485760}
+    max-pixels: ${MEDIA_MAX_PIXELS:25000000}
+    max-dimension: ${MEDIA_MAX_DIMENSION:12000}
+    orphan-cleanup-enabled: ${MEDIA_ORPHAN_CLEANUP_ENABLED:false}
+    orphan-grace: ${MEDIA_ORPHAN_GRACE_HOURS:24}h
+    r2:
+      account-id: ${R2_ACCOUNT_ID:}
+      access-key-id: ${R2_ACCESS_KEY_ID:}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+      bucket: ${R2_BUCKET:}
+      public-base-url: ${R2_PUBLIC_BASE_URL:}
+  lesson:
+    # окно входа в видеоурок относительно расписания (UTC)
+    join-minutes-before: ${LESSON_JOIN_MINUTES_BEFORE:15}
+    join-minutes-after: ${LESSON_JOIN_MINUTES_AFTER:60}
+
+logging:
+  level:
+    com.okututor.backend: INFO
+
+# Поиск курсов (docs/SEARCH_ARCHITECTURE.md). Все значения переопределяются ENV (SEARCH_*).
+search:
+  max-query-length: 200
+  default-page-size: 20
+  max-page-size: 100
+  # пул кандидатов из PostgreSQL, по которому работает ranking (спека #13)
+  candidate-limit: 100
+  ranking:
+    # веса нормализованных (0..1) факторов; 0 = фактор выключен
+    text-weight: 0.45
+    subject-weight: 0.20
+    technology-weight: 0.0
+    rating-weight: 0.15
+    review-weight: 0.10
+    availability-weight: 0.10     # этап 4: slots минус active bookings
+    personalization-weight: 0.05  # этап 5: boost по истории (только boost, не фильтр)
+    review-saturation: 10
+    # бонусы внутри нормализации text factor (веса выше не меняются)
+    exact-title-bonus: 0.9      # точный токен запроса в названии
+    technology-title-bonus: 0.8 # технология (canonical) в названии
+  ai:
+    # AI-парсер запросов по умолчанию ВЫКЛЮЧЕН: поиск полностью автономен (спека #7)
+    enabled: ${OKUTUTOR_SEARCH_AI_ENABLED:false}
+    provider: ${OKUTUTOR_SEARCH_AI_PROVIDER:}
+    model: ${OKUTUTOR_SEARCH_AI_MODEL:}
+    timeout-ms: 3000
+    max-tokens: 500
+  personalization:
+    enabled: true
+  embeddings:
+    enabled: false
+    provider:
+    model:
+  # Дополнительные группы синонимов (расширение словаря без деплоя).
+  # Формат: [[canonical, alias, alias...], ...]; canonical — латиница lowercase.
+  # Алиас, уже занятый дефолтной группой, не перезаписывается.
+  synonyms:
+    groups: []
+    # groups:
+    #   - [flutter, флатер, флюттер]
+    #   - [php, пхп]

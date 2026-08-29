@@ -1,0 +1,40 @@
+# PRODUCTION-профиль: строгая конфигурация без dev-дефолтов.
+# Все обязательные значения приходят ТОЛЬКО из окружения; при отсутствии
+# критичных переменных приложение не стартует (см. ProdEnvValidator).
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+app:
+  jwt:
+    # пустой дефолт обязателен: иначе неразрешённый плейсхолдер свяжется как
+    # литерал "${JWT_SECRET}"; отсутствие значения ловит ProdEnvValidator
+    secret: ${JWT_SECRET:}
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS:}
+  frontend-url: ${FRONTEND_URL:}
+  livekit:
+    api-key: ${LIVEKIT_API_KEY:}
+    api-secret: ${LIVEKIT_API_SECRET:}
+    ws-url: ${LIVEKIT_WS_URL:}
+  mail:
+    enabled: true
+    from: ${MAIL_FROM:}
+  seed:
+    # production никогда не создаёт демо-аккаунты, независимо от ENV
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health для probe; prometheus — метрики, снимаемые мониторингом (сеть обычно закрыта)
+        include: health,prometheus
+
+logging:
+  level:
+    com.okututor.backend: INFO
+    org.hibernate.SQL: WARN
