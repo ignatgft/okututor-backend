@@ -31,6 +31,7 @@ class MediaServiceTest {
     private ImageProcessor processor;
     private ObjectStorage storage;
     private MediaObjectRepository mediaObjects;
+    private MessageAttachmentRepository messageAttachments;
     private CourseRepository courseRepository;
     private MediaMetrics metrics;
     private AppProperties properties;
@@ -45,10 +46,11 @@ class MediaServiceTest {
         processor = mock(ImageProcessor.class);
         storage = mock(ObjectStorage.class);
         mediaObjects = mock(MediaObjectRepository.class);
+        messageAttachments = mock(MessageAttachmentRepository.class);
         courseRepository = mock(CourseRepository.class);
         metrics = new MediaMetrics(new SimpleMeterRegistry());
         properties = new AppProperties();
-        service = new MediaService(processor, storage, mediaObjects, courseRepository, metrics, properties);
+        service = new MediaService(processor, storage, mediaObjects, messageAttachments, courseRepository, metrics, properties);
 
         user = new User();
         user.setId(UUID.randomUUID());

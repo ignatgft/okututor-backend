@@ -48,6 +48,11 @@ public class MediaFileController {
         if (lower.endsWith(".png")) return MediaType.IMAGE_PNG;
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
         if (lower.endsWith(".gif")) return MediaType.IMAGE_GIF;
+        if (lower.endsWith(".pdf")) return MediaType.parseMediaType("application/pdf");
+        if (lower.endsWith(".doc")) return MediaType.parseMediaType("application/msword");
+        if (lower.endsWith(".docx")) return MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        if (lower.endsWith(".txt")) return MediaType.TEXT_PLAIN;
         return MediaType.APPLICATION_OCTET_STREAM;
     }
 }

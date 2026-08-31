@@ -5,13 +5,26 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
+
+    /**
+     * SELECT ... FOR UPDATE: блокирует строку брони до коммита. Используется
+     * MeetingService, чтобы сериализовать параллельные token/end-запросы для
+     * одной booking — между транзакциями не может образоваться гонка
+     * «оба не нашли meeting_session → оба вставили» (вторая вставка упала бы
+     * с duplicate key, а PostgreSQL abort'ит транзакцию после constraint violation).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from Booking b where b.id = :id")
+    Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
     /** join fetch снимает N+1 при маппинге списка в DTO (course_title и т.п.). */
     @Query(value = """
@@ -161,6 +174,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                             @Param("from") Instant from,
                             @Param("to") Instant to);
 
+    /** как {@link #overlapsStudent}, но не считает бронь с указанным id (перенос той же брони). */
+    @Query("select case when count(b) > 0 then true else false end from Booking b " +
+            "where b.status in :statuses and b.id <> :excludeId " +
+            "and (b.student.id = :userId or b.teacher.id = :userId) " +
+            "and b.startAt < :to and b.endAt > :from")
+    boolean overlapsParticipantExcluding(@Param("userId") UUID userId,
+                                         @Param("excludeId") UUID excludeId,
+                                         @Param("statuses") Collection<Booking.Status> statuses,
+                                         @Param("from") Instant from,
+                                         @Param("to") Instant to);
+
     @Query("select case when count(b) > 0 then true else false end from Booking b " +
             "where b.teacher.id = :userId and b.status in :statuses " +
             "and b.startAt < :to and b.endAt > :from")
@@ -180,4 +204,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                                                     @Param("statuses") Collection<Booking.Status> statuses,
                                                     @Param("from") Instant from,
                                                     @Param("to") Instant to);
+
+    // ---------- расписания ----------
+
+    boolean existsByScheduleId(UUID scheduleId);
+
+    @Query("select b from Booking b where b.schedule.id = :scheduleId and b.status in :statuses order by b.startAt asc")
+    List<Booking> findByScheduleIdAndStatusIn(@Param("scheduleId") UUID scheduleId,
+                                               @Param("statuses") Collection<Booking.Status> statuses);
+
+    List<Booking> findByScheduleIdOrderByStartAtAsc(UUID scheduleId);
 }

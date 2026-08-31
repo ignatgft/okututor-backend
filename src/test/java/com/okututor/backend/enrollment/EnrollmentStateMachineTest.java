@@ -28,12 +28,36 @@ class EnrollmentStateMachineTest {
                 .transitionTo(Enrollment.Status.REJECTED))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getCode())
-                .isEqualTo("CONFLICT");
+                .isEqualTo("INVALID_APPLICATION_STATE");
 
         assertThatThrownBy(() -> enrollmentWithStatus(Enrollment.Status.CANCELLED)
                 .transitionTo(Enrollment.Status.ACCEPTED))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("CANCELLED");
+    }
+
+    @Test
+    void scheduleNegotiationFlowIsLegal() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.ACCEPTED);
+        e.transitionTo(Enrollment.Status.SCHEDULE_PENDING);
+        e.transitionTo(Enrollment.Status.SCHEDULE_PROPOSED);
+        e.transitionTo(Enrollment.Status.SCHEDULED);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.SCHEDULED);
+    }
+
+    @Test
+    void agreedScheduleCanGoBackToPendingOnReject() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.SCHEDULE_PROPOSED);
+        e.transitionTo(Enrollment.Status.SCHEDULE_PENDING);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.SCHEDULE_PENDING);
+    }
+
+    @Test
+    void requestInfoCyclesBetweenPendingAndNeedsInfo() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.PENDING);
+        e.transitionTo(Enrollment.Status.NEEDS_INFO);
+        e.transitionTo(Enrollment.Status.PENDING);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.PENDING);
     }
 
     @Test

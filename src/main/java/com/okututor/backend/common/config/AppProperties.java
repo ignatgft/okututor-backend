@@ -138,6 +138,16 @@ public class AppProperties {
         private long maxAvatarSize = 5_242_880L;       // 5 MB
         private long maxCourseCoverSize = 10_485_760L; // 10 MB
         private long maxProfileSize = 10_485_760L;     // 10 MB
+        /** вложение сообщения: изображение в чате до этих размеров. */
+        private int messageAttachmentMaxWidth = 1920;
+        private int messageAttachmentMaxHeight = 1920;
+        private int messageAttachmentQuality = 82;
+        /** миниатюра изображения-вложения (messenger/support). */
+        private int messageThumbnailMaxWidth = 320;
+        private int messageThumbnailMaxHeight = 320;
+        private int messageThumbnailQuality = 78;
+        /** предельный размер файла-вложения сообщения (10 MB). */
+        private long maxMessageAttachmentSize = 10_485_760L;
         /** image bomb: максимум декодируемых пикселей */
         private long maxPixels = 25_000_000L;
         /** абсолютный предел стороны изображения */
@@ -175,6 +185,20 @@ public class AppProperties {
         public void setMaxCourseCoverSize(long v) { this.maxCourseCoverSize = v; }
         public long getMaxProfileSize() { return maxProfileSize; }
         public void setMaxProfileSize(long v) { this.maxProfileSize = v; }
+        public int getMessageAttachmentMaxWidth() { return messageAttachmentMaxWidth; }
+        public void setMessageAttachmentMaxWidth(int v) { this.messageAttachmentMaxWidth = v; }
+        public int getMessageAttachmentMaxHeight() { return messageAttachmentMaxHeight; }
+        public void setMessageAttachmentMaxHeight(int v) { this.messageAttachmentMaxHeight = v; }
+        public int getMessageAttachmentQuality() { return messageAttachmentQuality; }
+        public void setMessageAttachmentQuality(int v) { this.messageAttachmentQuality = v; }
+        public int getMessageThumbnailMaxWidth() { return messageThumbnailMaxWidth; }
+        public void setMessageThumbnailMaxWidth(int v) { this.messageThumbnailMaxWidth = v; }
+        public int getMessageThumbnailMaxHeight() { return messageThumbnailMaxHeight; }
+        public void setMessageThumbnailMaxHeight(int v) { this.messageThumbnailMaxHeight = v; }
+        public int getMessageThumbnailQuality() { return messageThumbnailQuality; }
+        public void setMessageThumbnailQuality(int v) { this.messageThumbnailQuality = v; }
+        public long getMaxMessageAttachmentSize() { return maxMessageAttachmentSize; }
+        public void setMaxMessageAttachmentSize(long v) { this.maxMessageAttachmentSize = v; }
         public long getMaxPixels() { return maxPixels; }
         public void setMaxPixels(long v) { this.maxPixels = v; }
         public int getMaxDimension() { return maxDimension; }

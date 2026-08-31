@@ -1,5 +1,6 @@
 package com.okututor.backend.support;
 
+import com.okututor.backend.media.MessageAttachment;
 import com.okututor.backend.user.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,6 +10,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -38,6 +40,10 @@ public class SupportTicketMessage {
     @Column(nullable = false, columnDefinition = "text")
     private String body;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "attachment_id")
+    private MessageAttachment attachment;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Type type = Type.USER_VISIBLE;
@@ -65,6 +71,8 @@ public class SupportTicketMessage {
     public String getSenderRole() { return senderRole; }
     public String getBody() { return body; }
     public void setBody(String body) { this.body = body; }
+    public MessageAttachment getAttachment() { return attachment; }
+    public void setAttachment(MessageAttachment attachment) { this.attachment = attachment; }
     public Type getType() { return type; }
     public void setType(Type type) { this.type = type; }
     public Instant getCreatedAt() { return createdAt; }

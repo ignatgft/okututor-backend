@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.okututor.backend.booking.Booking;
 import com.okututor.backend.booking.BookingRepository;
+import com.okututor.backend.admin.AuditLogService;
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.course.Course;
 import com.okututor.backend.course.CourseService;
@@ -37,6 +38,7 @@ class EnrollmentSeriesTest {
     private NotificationService notificationService;
     private MessagingService messagingService;
     private AvailabilitySlotRepository availabilitySlotRepository;
+    private AuditLogService auditLogService;
 
     private EnrollmentService service;
 
@@ -54,10 +56,12 @@ class EnrollmentSeriesTest {
         notificationService = mock(NotificationService.class);
         messagingService = mock(MessagingService.class);
         availabilitySlotRepository = mock(AvailabilitySlotRepository.class);
+        auditLogService = mock(AuditLogService.class);
 
         service = new EnrollmentService(
                 enrollmentRepository, courseService, bookingRepository,
-                notificationService, messagingService, availabilitySlotRepository
+                notificationService, messagingService, availabilitySlotRepository,
+                auditLogService
         );
 
         teacher = new User();

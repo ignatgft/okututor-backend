@@ -28,6 +28,11 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, message);
     }
 
+    /** 404 с доменным кодом (напр. APPLICATION_NOT_FOUND). */
+    public static ApiException notFound(String code, String message) {
+        return new ApiException(HttpStatus.NOT_FOUND, code, message);
+    }
+
     public static ApiException forbidden(String message) {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.FORBIDDEN, message);
     }
@@ -45,8 +50,18 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.CONFLICT, message);
     }
 
+    /** 409 с доменным кодом (незаконный переход, конфликт расписания и т.п.). */
+    public static ApiException conflict(String code, String message) {
+        return new ApiException(HttpStatus.CONFLICT, code, message);
+    }
+
     public static ApiException validation(String message) {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCodes.VALIDATION_ERROR, message);
+    }
+
+    /** 422 с доменным кодом (неверная таймзона/дата и т.п.), не ломая общий код VALIDATION_ERROR. */
+    public static ApiException validation(String code, String message) {
+        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, code, message);
     }
 
     public static ApiException rateLimited(String message) {

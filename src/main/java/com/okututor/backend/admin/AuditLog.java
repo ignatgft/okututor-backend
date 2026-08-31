@@ -35,6 +35,14 @@ public class AuditLog {
     @Column(columnDefinition = "text")
     private String details;
 
+    /** прежнее состояние (напр., status) до перехода. */
+    @Column(name = "old_value", columnDefinition = "text")
+    private String oldValue;
+
+    /** новое состояние (напр., status) после перехода. */
+    @Column(name = "new_value", columnDefinition = "text")
+    private String newValue;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -55,8 +63,13 @@ public class AuditLog {
     public void setAction(String action) { this.action = action; }
     public String getTargetType() { return targetType; }
     public void setTargetType(String targetType) { this.targetType = targetType; }
-    public String getTargetId() { return targetId; }
+public String getTargetId() { return targetId; }
     public void setTargetId(String targetId) { this.targetId = targetId; }
     public String getDetails() { return details; }
     public void setDetails(String details) { this.details = details; }
+    public String getOldValue() { return oldValue; }
+    public void setOldValue(String oldValue) { this.oldValue = oldValue; }
+    public String getNewValue() { return newValue; }
+    public void setNewValue(String newValue) { this.newValue = newValue; }
+    public Instant getCreatedAt() { return createdAt; }
 }

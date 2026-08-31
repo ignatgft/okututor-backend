@@ -39,6 +39,7 @@ public class SeedData implements CommandLineRunner {
     private final com.okututor.backend.tutors.AvailabilitySlotRepository availabilityRepository;
     private final com.okututor.backend.tutors.TutorApplicationRepository applicationRepository;
     private final com.okututor.backend.notification.NotificationRepository notificationRepository;
+    private final com.okututor.backend.enrollment.EnrollmentRepository enrollmentRepository;
     private final SupportService supportService;
 
     public SeedData(UserRepository userRepository,
@@ -49,6 +50,7 @@ public class SeedData implements CommandLineRunner {
                     com.okututor.backend.tutors.AvailabilitySlotRepository availabilityRepository,
                     com.okututor.backend.tutors.TutorApplicationRepository applicationRepository,
                     com.okututor.backend.notification.NotificationRepository notificationRepository,
+                    com.okututor.backend.enrollment.EnrollmentRepository enrollmentRepository,
                     SupportService supportService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -58,6 +60,7 @@ public class SeedData implements CommandLineRunner {
         this.availabilityRepository = availabilityRepository;
         this.applicationRepository = applicationRepository;
         this.notificationRepository = notificationRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.supportService = supportService;
     }
 
@@ -102,6 +105,8 @@ public class SeedData implements CommandLineRunner {
                 com.okututor.backend.booking.Booking.Status.CONFIRMED);
         booking(student, tutor, "Python Programming", 3, 16, 90,
                 com.okututor.backend.booking.Booking.Status.PENDING);
+
+        application(student, tutor, "Mathematics Basics");
 
         supportService.create(student, new com.okututor.backend.support.dto.SupportTicketCreateRequest(
                 "TECHNICAL",
@@ -183,6 +188,37 @@ public class SeedData implements CommandLineRunner {
         course.setStatus(com.okututor.backend.course.Course.Status.APPROVED);
         course.setAverageRating(BigDecimal.valueOf(rating));
         courseRepository.save(course);
+    }
+
+    /** демо-заявка «принят» — стартовая точка нового сценария application→schedule→lessons. */
+    private void application(User student, User teacher, String courseTitle) {
+        var courseOpt = courseRepository
+                .search(courseTitle.toLowerCase(), null, null, null, null,
+                        null, null, com.okututor.backend.course.Course.Status.APPROVED,
+                        org.springframework.data.domain.PageRequest.of(0, 20))
+                .getContent().stream()
+                .filter(c -> c.getTitle().equals(courseTitle))
+                .findFirst();
+        if (courseOpt.isEmpty()) {
+            return;
+        }
+        if (enrollmentRepository.findFirstByCourseIdAndStudentIdOrderByCreatedAtDesc(
+                courseOpt.get().getId(), student.getId()).isPresent()) {
+            return;
+        }
+        var e = new com.okututor.backend.enrollment.Enrollment();
+        e.setCourse(courseOpt.get());
+        e.setStudent(student);
+        e.setTutor(teacher);
+        e.setStatus(com.okututor.backend.enrollment.Enrollment.Status.ACCEPTED);
+        e.setPreferredFormat("ONLINE");
+        e.setPreferredDays(List.of("MONDAY", "WEDNESDAY"));
+        e.setPreferredStartTime(LocalTime.of(18, 0));
+        e.setPreferredEndTime(LocalTime.of(20, 0));
+        e.setFrequency("WEEKLY");
+        e.setDurationMinutes(60);
+        e.setExpiresAt(Instant.now().plusSeconds(14 * 86400L));
+        enrollmentRepository.save(e);
     }
 
     private void booking(User student, User teacher, String courseTitle, int daysAhead, int hour, int duration,

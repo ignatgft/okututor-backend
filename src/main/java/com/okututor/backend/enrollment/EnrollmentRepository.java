@@ -15,7 +15,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     Optional<Enrollment> findByCourseIdAndStudentIdAndStatusIn(UUID courseId, UUID studentId,
                                                                Iterable<Enrollment.Status> statuses);
 
-    Optional<Enrollment> findByCourseIdAndStudentIdOrderByCreatedAtDesc(UUID courseId, UUID studentId);
+    /** последняя по времени запись (историческая или текущая); не падает на дублях REJECTED/CANCELLED. */
+    Optional<Enrollment> findFirstByCourseIdAndStudentIdOrderByCreatedAtDesc(UUID courseId, UUID studentId);
 
     @Query(value = """
             select e from Enrollment e
@@ -76,4 +77,10 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
             "where e.student.id = :studentId and e.status in :statuses")
     long countDistinctCourses(@Param("studentId") UUID studentId,
                               @Param("statuses") Collection<Enrollment.Status> statuses);
+
+    /** идемпотентный batch-перевод зависших заявок в EXPIRED (студент не ответил). */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update Enrollment e set e.status = com.okututor.backend.enrollment.Enrollment.Status.EXPIRED, "
+            + "e.updatedAt = :now where e.status in :statuses and e.expiresAt is not null and e.expiresAt < :now")
+    int expireStale(@Param("statuses") Collection<Enrollment.Status> statuses, @Param("now") java.time.Instant now);
 }

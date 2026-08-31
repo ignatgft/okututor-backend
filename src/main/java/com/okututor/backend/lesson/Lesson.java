@@ -2,6 +2,7 @@ package com.okututor.backend.lesson;
 
 import com.okututor.backend.booking.Booking;
 import com.okututor.backend.course.Course;
+import com.okututor.backend.schedule.Schedule;
 import com.okututor.backend.user.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -54,6 +55,34 @@ public class Lesson {
     @Column(name = "start_at")
     private Instant startAt;
 
+    @Column(name = "end_at")
+    private Instant endAt;
+
+    /** источник урока — расписание (null для одноразовых). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id")
+    private Schedule schedule;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "location_type", length = 20)
+    private LocationType locationType;
+
+    @Column(name = "location_address", columnDefinition = "text")
+    private String locationAddress;
+
+    @Column(name = "location_details", columnDefinition = "text")
+    private String locationDetails;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by")
+    private User cancelledBy;
+
+    @Column(name = "cancel_reason", columnDefinition = "text")
+    private String cancelReason;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -78,6 +107,17 @@ public class Lesson {
         return userId != null && (userId.equals(getTeacherId()) || userId.equals(getStudentId()));
     }
 
+    public boolean isLive() {
+        return getStatus() == Status.SCHEDULED || getStatus() == Status.IN_PROGRESS;
+    }
+
+    public void markCancelled(User by, String reason) {
+        setStatus(Status.CANCELLED);
+        setCancelledBy(by);
+        setCancelReason(reason);
+        setCancelledAt(Instant.now());
+    }
+
     // --- геттеры/сеттеры ---
 
     public UUID getId() { return id; }
@@ -97,6 +137,22 @@ public class Lesson {
     public void setStatus(Status status) { this.status = status; }
     public Instant getStartAt() { return startAt; }
     public void setStartAt(Instant startAt) { this.startAt = startAt; }
+    public Instant getEndAt() { return endAt; }
+    public void setEndAt(Instant endAt) { this.endAt = endAt; }
+    public Schedule getSchedule() { return schedule; }
+    public void setSchedule(Schedule schedule) { this.schedule = schedule; }
+    public LocationType getLocationType() { return locationType; }
+    public void setLocationType(LocationType locationType) { this.locationType = locationType; }
+    public String getLocationAddress() { return locationAddress; }
+    public void setLocationAddress(String locationAddress) { this.locationAddress = locationAddress; }
+    public String getLocationDetails() { return locationDetails; }
+    public void setLocationDetails(String locationDetails) { this.locationDetails = locationDetails; }
+    public User getCancelledBy() { return cancelledBy; }
+    public void setCancelledBy(User cancelledBy) { this.cancelledBy = cancelledBy; }
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+    public Instant getCancelledAt() { return cancelledAt; }
+    public void setCancelledAt(Instant cancelledAt) { this.cancelledAt = cancelledAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

@@ -1,10 +1,11 @@
 package com.okututor.backend.lesson;
 
 import com.okututor.backend.booking.Booking;
-import com.okututor.backend.booking.BookingService;
+import com.okututor.backend.booking.BookingRepository;
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.user.User;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,16 +13,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MeetingService {
 
-    private final BookingService bookingService;
+    private final BookingRepository bookingRepository;
     private final MeetingSessionRepository meetingRepository;
     private final LiveKitTokenService liveKitTokenService;
     private final com.okututor.backend.common.config.AppProperties properties;
 
-    public MeetingService(BookingService bookingService,
+    public MeetingService(BookingRepository bookingRepository,
                           MeetingSessionRepository meetingRepository,
                           LiveKitTokenService liveKitTokenService,
                           com.okututor.backend.common.config.AppProperties properties) {
-        this.bookingService = bookingService;
+        this.bookingRepository = bookingRepository;
         this.meetingRepository = meetingRepository;
         this.liveKitTokenService = liveKitTokenService;
         this.properties = properties;
@@ -35,7 +36,9 @@ public class MeetingService {
      */
     @Transactional
     public LiveKitTokenService.MeetingToken token(User requester, UUID bookingId) {
-        Booking booking = requireParticipantBooking(bookingId, requester);
+        // SELECT ... FOR UPDATE: параллельные запросы на один booking сериализуются,
+        // гонка find-then-insert на meeting_sessions исключена на уровне БД
+        Booking booking = requireParticipantBookingLocked(bookingId, requester);
         if (booking.getStatus() != Booking.Status.CONFIRMED && booking.getStatus() != Booking.Status.COMPLETED) {
             throw ApiException.conflict("Lesson is available after the tutor confirms the booking");
         }
@@ -50,18 +53,16 @@ public class MeetingService {
                             .formatted(opensAt, closesAt));
         }
 
-        MeetingSession session = meetingRepository.findByBookingId(bookingId).orElseGet(() -> {
-            MeetingSession fresh = new MeetingSession();
-            fresh.setBookingId(bookingId);
-            fresh.setRoomName(LiveKitTokenService.roomName(bookingId));
-            fresh.setStartedAt(Instant.now());
-            return fresh;
-        });
-        session.setTokenIssuedAt(Instant.now());
+        MeetingSession session = findOrCreateSession(bookingId, now);
+        // startedAt фиксируется при первом входе и не перезаписывается при повторах
+        if (session.getStartedAt() == null) {
+            session.setStartedAt(now);
+        }
+        session.setTokenIssuedAt(now);
         if (session.getEndedAt() != null) {
             session.setEndedAt(null); // разрешаем повторный вход в течение TTL после случайного выхода
         }
-        session = meetingRepository.save(session);
+        meetingRepository.save(session);
 
         return liveKitTokenService.issue(bookingId, requester.getId(),
                 requester.getFullName());
@@ -70,20 +71,36 @@ public class MeetingService {
     /** Вызывается PgLesson при выходе из урока; ошибки фронт глотает сам. */
     @Transactional
     public java.util.Map<String, String> end(User requester, UUID bookingId) {
-        requireParticipantBooking(bookingId, requester);
-        MeetingSession session = meetingRepository.findByBookingId(bookingId).orElseGet(() -> {
-            MeetingSession fresh = new MeetingSession();
-            fresh.setBookingId(bookingId);
-            fresh.setRoomName(LiveKitTokenService.roomName(bookingId));
-            return fresh;
-        });
+        requireParticipantBookingLocked(bookingId, requester);
+        MeetingSession session = findOrCreateSession(bookingId, Instant.now());
         session.setEndedAt(Instant.now());
         meetingRepository.save(session);
         return java.util.Map.of("status", "ENDED");
     }
 
-    private Booking requireParticipantBooking(UUID bookingId, User requester) {
-        Booking booking = bookingService.requireById(bookingId);
+    /**
+     * Одна booking → одна MeetingSession (UNIQUE booking_id в БД). Родительский
+     * транзакционный метод блокирует строку booking (SELECT ... FOR UPDATE),
+     * поэтому сюда два потока одновременно не входят: второй ждёт коммита первого
+     * и находит уже вставленную запись. Вставка идёт без catch-then-reread —
+     * в PostgreSQL после constraint violation транзакция обрывается и повторное
+     * чтение внутри неё всё равно упадёт.
+     */
+    private MeetingSession findOrCreateSession(UUID bookingId, Instant now) {
+        Optional<MeetingSession> existing = meetingRepository.findByBookingId(bookingId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        MeetingSession fresh = new MeetingSession();
+        fresh.setBookingId(bookingId);
+        fresh.setRoomName(LiveKitTokenService.roomName(bookingId));
+        fresh.setStartedAt(now);
+        return meetingRepository.save(fresh);
+    }
+
+    private Booking requireParticipantBookingLocked(UUID bookingId, User requester) {
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> ApiException.notFound("Booking not found"));
         if (!booking.involves(requester.getId())) {
             throw ApiException.forbidden("Only booking participants can access the meeting");
         }

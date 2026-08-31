@@ -1,6 +1,8 @@
 package com.okututor.backend.support;
 
 import com.okututor.backend.common.error.ApiException;
+import com.okututor.backend.media.MediaService;
+import com.okututor.backend.media.MessageAttachment;
 import com.okututor.backend.notification.NotificationService;
 import com.okututor.backend.user.Role;
 import com.okututor.backend.user.User;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /** админская сторона саппорта: очередь тикетов, ответы, assign/status/priority. */
 @Service
@@ -23,15 +26,18 @@ public class SupportTicketAdminService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final SupportTicketCore core;
+    private final MediaService mediaService;
 
     public SupportTicketAdminService(SupportTicketRepository ticketRepository,
                                      UserRepository userRepository,
                                      NotificationService notificationService,
-                                     SupportTicketCore core) {
+                                     SupportTicketCore core,
+                                     MediaService mediaService) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.core = core;
+        this.mediaService = mediaService;
     }
 
     @Transactional(readOnly = true)
@@ -62,8 +68,19 @@ public class SupportTicketAdminService {
 
     @Transactional
     public SupportService.TicketMessageResponse sendAdminMessage(User admin, Long number, String body) {
+        return sendAdminMessage(admin, number, body, null);
+    }
+
+    /** ответ админа с вложением (multipart: body + file). */
+    @Transactional
+    public SupportService.TicketMessageResponse sendAdminMessage(User admin, Long number,
+                                                                 String body, MultipartFile file) {
         SupportTicket ticket = core.byNumber(number);
-        var message = core.postMessage(ticket, admin, body, false);
+        String text = body == null ? "" : body.trim();
+        MessageAttachment attachment = (file != null && !file.isEmpty())
+                ? mediaService.storeClaimedMessageAttachment(admin, file)
+                : null;
+        var message = core.postMessage(ticket, admin, text, false, attachment);
         if (ticket.getStatus() == SupportTicket.Status.OPEN
                 || ticket.getStatus() == SupportTicket.Status.IN_PROGRESS) {
             ticket.setStatus(SupportTicket.Status.WAITING_FOR_USER);
@@ -71,7 +88,9 @@ public class SupportTicketAdminService {
         if (ticket.getAssignedAdmin() == null) {
             ticket.setAssignedAdmin(admin);
         }
-        ticket.setLastMessagePreview(SupportTicketCore.preview(body));
+        String preview = text.isEmpty() && attachment != null
+                ? attachment.getOriginalFilename() : SupportTicketCore.preview(text);
+        ticket.setLastMessagePreview(preview);
         ticketRepository.save(ticket);
         // см. комментарий в SupportTicketUserService.sendUserMessage:
         // entity-поля до flush, инкремент — после

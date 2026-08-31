@@ -4,7 +4,11 @@ package com.okututor.backend.media;
 public enum MediaKind {
     AVATAR("users", "avatar"),
     COURSE_COVER("courses", "cover"),
-    PROFILE("tutors", "profile");
+    PROFILE("tutors", "profile"),
+    /** основной файл вложения сообщения (изображение или документ). */
+    MESSAGE_ATTACHMENT("messages", "attachment"),
+    /** миниатюра изображения-вложения сообщения. */
+    MESSAGE_THUMBNAIL("messages", "attachment-thumb");
 
     private final String keyPrefix;
     private final String keySegment;

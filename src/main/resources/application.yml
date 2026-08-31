@@ -136,6 +136,13 @@ app:
     max-avatar-size: ${MEDIA_MAX_AVATAR_SIZE:5242880}
     max-course-cover-size: ${MEDIA_MAX_COURSE_COVER_SIZE:10485760}
     max-profile-size: ${MEDIA_MAX_PROFILE_SIZE:10485760}
+    message-attachment-max-width: ${MEDIA_MESSAGE_ATTACHMENT_MAX_WIDTH:1920}
+    message-attachment-max-height: ${MEDIA_MESSAGE_ATTACHMENT_MAX_HEIGHT:1920}
+    message-attachment-quality: ${MEDIA_MESSAGE_ATTACHMENT_QUALITY:82}
+    message-thumbnail-max-width: ${MEDIA_MESSAGE_THUMBNAIL_MAX_WIDTH:320}
+    message-thumbnail-max-height: ${MEDIA_MESSAGE_THUMBNAIL_MAX_HEIGHT:320}
+    message-thumbnail-quality: ${MEDIA_MESSAGE_THUMBNAIL_QUALITY:78}
+    max-message-attachment-size: ${MEDIA_MAX_MESSAGE_ATTACHMENT_SIZE:10485760}
     max-pixels: ${MEDIA_MAX_PIXELS:25000000}
     max-dimension: ${MEDIA_MAX_DIMENSION:12000}
     orphan-cleanup-enabled: ${MEDIA_ORPHAN_CLEANUP_ENABLED:false}

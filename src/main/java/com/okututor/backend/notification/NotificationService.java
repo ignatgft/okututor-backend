@@ -7,6 +7,8 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class NotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
     public record NotificationResponse(
             UUID id,
             String message,
@@ -22,7 +26,9 @@ public class NotificationService {
             boolean read,
             String link,
             Instant created_at,
-            Map<String, Object> payload
+            Map<String, Object> payload,
+            String entity_type,
+            String entity_id
     ) {}
 
     private final NotificationRepository repository;
@@ -48,17 +54,54 @@ public class NotificationService {
     @Async("notificationExecutor")
     @Transactional
     public void notify(UUID userId, String message, String type, String link, Map<String, Object> payload) {
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null || message == null || message.isBlank()) {
-            return;
+        notify(userId, message, type, link, payload, null, null);
+    }
+
+    /** с привязкой к сущности (entity_type + entity_id) — для таймлайна и дедупа напоминаний. */
+    @Async("notificationExecutor")
+    @Transactional
+    public void notify(UUID userId, String message, String type, String link,
+                       Map<String, Object> payload, String entityType, String entityId) {
+        try {
+            User user = userRepository.findById(userId).orElse(null);
+            if (user == null || message == null || message.isBlank()) {
+                return;
+            }
+            Notification notification = new Notification();
+            notification.setUser(user);
+            notification.setMessage(message);
+            notification.setType(type == null ? "SYSTEM" : type);
+            notification.setLink(link);
+            notification.setPayload(payload == null ? null : new LinkedHashMap<>(payload));
+            notification.setEntityType(entityType);
+            notification.setEntityId(entityId);
+            repository.save(notification);
+        } catch (Exception ex) {
+            // best-effort: сбой уведомления не должен ломать основной бизнес-запрос,
+            // но и не должен быть "тихим" — логируем контекст (чувствительные данные не пишем)
+            log.error("notification creation failed: type={} userId={} link={} entityId={}",
+                    type, userId, link, entityId != null ? entityId : extractEntityId(payload), ex);
         }
-        Notification notification = new Notification();
-        notification.setUser(user);
-        notification.setMessage(message);
-        notification.setType(type == null ? "SYSTEM" : type);
-        notification.setLink(link);
-        notification.setPayload(payload == null ? null : new LinkedHashMap<>(payload));
-        repository.save(notification);
+    }
+
+    /** true, если для сущности этого типа уже было такое же событие (дедуп напоминаний). */
+    @Transactional(readOnly = true)
+    public boolean existsForEntity(String entityType, String entityId, String type) {
+        return !repository.findByEntityTypeAndEntityIdAndType(entityType, entityId, type).isEmpty();
+    }
+
+    /** извлекает id связанной сущности из payload, не логируя весь payload. */
+    private static String extractEntityId(Map<String, Object> payload) {
+        if (payload == null) {
+            return null;
+        }
+        for (String key : java.util.List.of("enrollment_id", "booking_id", "course_id")) {
+            Object value = payload.get(key);
+            if (value != null) {
+                return value.toString();
+            }
+        }
+        return null;
     }
 
     @Transactional(readOnly = true)
@@ -92,6 +135,6 @@ public class NotificationService {
 
     private NotificationResponse toResponse(Notification n) {
         return new NotificationResponse(n.getId(), n.getMessage(), n.getType(), n.isRead(),
-                n.getLink(), n.getCreatedAt(), n.getPayload());
+                n.getLink(), n.getCreatedAt(), n.getPayload(), n.getEntityType(), n.getEntityId());
     }
 }

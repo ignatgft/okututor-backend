@@ -2,6 +2,7 @@ package com.okututor.backend.booking;
 
 import com.okututor.backend.course.Course;
 import com.okututor.backend.enrollment.Enrollment;
+import com.okututor.backend.schedule.Schedule;
 import com.okututor.backend.user.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,6 +43,11 @@ public class Booking {
     @JoinColumn(name = "enrollment_id")
     private Enrollment enrollment;
 
+    /** источник конкретного занятия — подтверждённое расписание (null для одноразовых заявок). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id")
+    private Schedule schedule;
+
     @Column(name = "start_at", nullable = false)
     private Instant startAt;
 
@@ -60,6 +66,27 @@ public class Booking {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by")
+    private User cancelledBy;
+
+    @Column(name = "cancel_reason", columnDefinition = "text")
+    private String cancelReason;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    public boolean isLive() {
+        return getStatus() == Status.PENDING || getStatus() == Status.CONFIRMED || getStatus() == Status.RESCHEDULED;
+    }
+
+    public void markCancelled(User by, String reason) {
+        setStatus(Status.CANCELLED);
+        setCancelledBy(by);
+        setCancelReason(reason);
+        setCancelledAt(Instant.now());
+    }
 
     @PrePersist
     void prePersist() {
@@ -117,6 +144,14 @@ public class Booking {
     public void setTeacher(User teacher) { this.teacher = teacher; }
     public Enrollment getEnrollment() { return enrollment; }
     public void setEnrollment(Enrollment enrollment) { this.enrollment = enrollment; }
+    public Schedule getSchedule() { return schedule; }
+    public void setSchedule(Schedule schedule) { this.schedule = schedule; }
+    public User getCancelledBy() { return cancelledBy; }
+    public void setCancelledBy(User cancelledBy) { this.cancelledBy = cancelledBy; }
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+    public Instant getCancelledAt() { return cancelledAt; }
+    public void setCancelledAt(Instant cancelledAt) { this.cancelledAt = cancelledAt; }
     public UUID getStudentId() {
         return getStudent() != null ? getStudent().getId() : null;
     }

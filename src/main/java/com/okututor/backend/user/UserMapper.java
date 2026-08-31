@@ -33,6 +33,10 @@ public class UserMapper {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getAvatarUrl(),
-                user.getRole().name());
+                user.getRole().name(),
+                user.getBio(),
+                user.getLocation(),
+                user.getExperienceYears(),
+                user.getEducation());
     }
 }

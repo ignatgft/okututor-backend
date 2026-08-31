@@ -3,6 +3,9 @@ package com.okututor.backend.messaging;
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.enrollment.Enrollment;
 import com.okututor.backend.enrollment.EnrollmentRepository;
+import com.okututor.backend.media.MediaService;
+import com.okututor.backend.media.MessageAttachment;
+import com.okututor.backend.media.MessageAttachmentRef;
 import com.okututor.backend.tutors.TutorApplication;
 import com.okututor.backend.tutors.TutorApplicationRepository;
 import com.okututor.backend.user.Role;
@@ -15,6 +18,7 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class MessagingService {
@@ -34,11 +38,12 @@ public class MessagingService {
             UUID sender_id,
             String sender_name,
             String body,
+            MessageAttachmentRef attachment,
             Instant created_at,
             Instant read_at
     ) {}
 
-    public record SendRequest(UUID conversation_id, String body) {}
+    public record SendRequest(UUID conversation_id, String body, UUID attachment_media_id) {}
 
     public record OpenConversationRequest(UUID user_id, String type) {}
 
@@ -47,6 +52,7 @@ public class MessagingService {
     private final UserService userService;
     private final EnrollmentRepository enrollmentRepository;
     private final TutorApplicationRepository tutorApplicationRepository;
+    private final MediaService mediaService;
     private final com.okututor.backend.notification.NotificationService notificationService;
 
     public MessagingService(ConversationRepository conversationRepository,
@@ -54,12 +60,14 @@ public class MessagingService {
                             UserService userService,
                             EnrollmentRepository enrollmentRepository,
                             TutorApplicationRepository tutorApplicationRepository,
+                            MediaService mediaService,
                             com.okututor.backend.notification.NotificationService notificationService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.userService = userService;
         this.enrollmentRepository = enrollmentRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
+        this.mediaService = mediaService;
         this.notificationService = notificationService;
     }
 
@@ -96,11 +104,18 @@ public class MessagingService {
 
     @Transactional
     public MessageResponse send(User sender, SendRequest request) {
+        return send(sender, request, null);
+    }
+
+    @Transactional
+    public MessageResponse send(User sender, SendRequest request, MultipartFile file) {
         if (request == null || request.conversation_id() == null) {
             throw new com.okututor.backend.common.error.FieldValidationException(
                     Map.of("conversation_id", "conversation_id is required"));
         }
-        if (request.body() == null || request.body().isBlank()) {
+        MessageAttachment attachment = resolveAttachment(sender, request, file);
+        String body = request.body() == null ? "" : request.body().trim();
+        if (body.isEmpty() && attachment == null) {
             throw new com.okututor.backend.common.error.FieldValidationException(
                     Map.of("body", "Message must not be empty"));
         }
@@ -109,10 +124,12 @@ public class MessagingService {
         Message message = new Message();
         message.setConversation(conversation);
         message.setSender(sender);
-        message.setBody(request.body().trim());
+        message.setBody(body);
+        message.setAttachment(attachment);
         message = messageRepository.save(message);
 
-        conversation.setLastMessage(message.getBody());
+        conversation.setLastMessage(attachment != null && body.isEmpty()
+                ? attachment.getOriginalFilename() : message.getBody());
         conversation.setLastMessageAt(message.getCreatedAt());
         conversationRepository.save(conversation);
 
@@ -123,6 +140,20 @@ public class MessagingService {
         }
 
         return toMessageResponse(message, conversation);
+    }
+
+    /**
+     * разрешает вложение: multipart-файл выигрывает, иначе привязка ранее
+     * загруженного media_id (двухшаговый flow). Без вложения — null.
+     */
+    private MessageAttachment resolveAttachment(User sender, SendRequest request, MultipartFile file) {
+        if (file != null && !file.isEmpty()) {
+            return mediaService.storeClaimedMessageAttachment(sender, file);
+        }
+        if (request.attachment_media_id() != null) {
+            return mediaService.claimMessageAttachment(sender, request.attachment_media_id());
+        }
+        return null;
     }
 
     /** открывает (при отсутствии создаёт) DIRECT-переписку с другим пользователем. */
@@ -220,6 +251,7 @@ public class MessagingService {
                 m.getSenderId(),
                 sender != null ? sender.getFullName() : null,
                 m.getBody(),
+                m.getAttachment() != null ? MessageAttachmentRef.of(m.getAttachment()) : null,
                 m.getCreatedAt(),
                 m.getReadAt());
     }

@@ -2,7 +2,10 @@ package com.okututor.backend.support;
 
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.common.error.FieldValidationException;
+import com.okututor.backend.media.MessageAttachment;
+import com.okututor.backend.media.MessageAttachmentRef;
 import com.okututor.backend.user.User;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -28,14 +31,21 @@ public class SupportTicketCore {
     }
 
     public SupportTicketMessage postMessage(SupportTicket ticket, User sender, String body, boolean internalNote) {
-        if (body == null || body.isBlank()) {
+        return postMessage(ticket, sender, body, internalNote, null);
+    }
+
+    public SupportTicketMessage postMessage(SupportTicket ticket, User sender, String body,
+                                            boolean internalNote, MessageAttachment attachment) {
+        String text = body == null ? "" : body.trim();
+        if (text.isEmpty() && attachment == null) {
             throw new FieldValidationException(Map.of("body", "Message must not be empty"));
         }
         SupportTicketMessage message = new SupportTicketMessage();
         message.setTicket(ticket);
         message.setSender(sender);
         message.setSenderRole(sender.getRole().name());
-        message.setBody(body.trim());
+        message.setBody(text);
+        message.setAttachment(attachment);
         message.setType(internalNote ? SupportTicketMessage.Type.INTERNAL_NOTE
                 : SupportTicketMessage.Type.USER_VISIBLE);
         return messageRepository.save(message);
@@ -80,6 +90,7 @@ public class SupportTicketCore {
     public static SupportService.TicketMessageResponse toMessageResponse(SupportTicketMessage m,
                                                                          SupportTicket ticket) {
         User sender = m.getSender();
+        MessageAttachment attachment = m.getAttachment();
         return new SupportService.TicketMessageResponse(
                 "msg-" + m.getId().toString().substring(0, 8),
                 ticket.displayId(),
@@ -88,8 +99,8 @@ public class SupportTicketCore {
                 m.getSenderRole(),
                 m.getBody(),
                 m.getCreatedAt(),
-                "USER_VISIBLE",
-                java.util.List.of(),
+                m.getType().name(),
+                attachment != null ? List.of(MessageAttachmentRef.of(attachment)) : List.of(),
                 "SENT");
     }
 }

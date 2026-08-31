@@ -57,7 +57,7 @@ public class OAuthLoginSuccessHandler extends SimpleUrlAuthenticationSuccessHand
                     .toUriString();
             getRedirectStrategy().sendRedirect(request, response, redirectUrl);
         } catch (Exception ex) {
-            log.error("OAuth login failed: {}", ex.getMessage());
+            log.error("OAuth login failed", ex);
             redirectError(response);
         }
     }

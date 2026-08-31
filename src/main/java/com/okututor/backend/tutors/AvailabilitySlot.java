@@ -32,6 +32,10 @@ public class AvailabilitySlot {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    /** IANA-зона, в которой интерпретируется startTime/endTime (по умолчанию UTC). */
+    @Column(nullable = false, length = 50)
+    private String timezone = "UTC";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -52,4 +56,6 @@ public class AvailabilitySlot {
     public void setStartTime(LocalTime startTime) { this.startTime = startTime; }
     public LocalTime getEndTime() { return endTime; }
     public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
 }

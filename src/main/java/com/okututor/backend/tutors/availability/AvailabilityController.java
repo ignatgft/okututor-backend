@@ -14,6 +14,9 @@ import com.okututor.backend.tutors.availability.dto.TimeOffResponse;
 import com.okututor.backend.user.User;
 import com.okututor.backend.user.UserService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -56,6 +60,21 @@ public class AvailabilityController {
     public List<AvailabilityService.SlotResponse> myAvailability(@AuthenticationPrincipal UserPrincipal principal) {
         requireAuth(principal);
         return availabilityService.listForTutor(principal.id());
+    }
+
+    /** общее окно доступности двух пользователей на дату (для планирования). */
+    @GetMapping("/api/v1/availability/common-slots")
+    public List<AvailabilityService.CommonSlot> commonSlots(
+            @RequestParam UUID tutor_id,
+            @RequestParam UUID student_id,
+            @RequestParam String date) {
+        LocalDate d;
+        try {
+            d = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException e) {
+            throw ApiException.validation("date must be yyyy-MM-dd");
+        }
+        return availabilityService.findCommonSlots(tutor_id, student_id, d);
     }
 
     @PostMapping("/api/v1/availability")

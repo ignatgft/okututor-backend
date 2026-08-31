@@ -20,6 +20,18 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     long deleteByUserIdAndReadTrue(UUID userId);
 
+    List<Notification> findByEntityTypeAndEntityIdAndType(String entityType, String entityId, String type);
+
+    /** существует ли почтовое событие (напр. напоминание) с конкретным окном в payload. */
+    @Query(value = """
+            select case when count(n) > 0 then true else false end
+            from notifications n
+            where n.entity_type = :entityType and n.entity_id = :entityId and n.type = :type
+              and coalesce(n.payload->>'window', '') = :window
+            """, nativeQuery = true)
+    boolean existsReminder(@Param("entityType") String entityType, @Param("entityId") String entityId,
+                           @Param("type") String type, @Param("window") String window);
+
     /** batch-апдейт вместо загрузки всех непрочитанных в память. */
     @Modifying
     @Query("""

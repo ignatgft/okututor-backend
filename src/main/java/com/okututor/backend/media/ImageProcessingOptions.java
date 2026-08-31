@@ -24,6 +24,12 @@ public record ImageProcessingOptions(
                     cfg.getCourseCoverQuality(), true, cfg.getMaxCourseCoverSize());
             case PROFILE -> new ImageProcessingOptions(cfg.getProfileMaxWidth(), cfg.getProfileMaxHeight(),
                     CropMode.FIT, cfg.getFormat(), cfg.getProfileQuality(), true, cfg.getMaxProfileSize());
+            case MESSAGE_ATTACHMENT -> new ImageProcessingOptions(cfg.getMessageAttachmentMaxWidth(),
+                    cfg.getMessageAttachmentMaxHeight(), CropMode.FIT, cfg.getFormat(),
+                    cfg.getMessageAttachmentQuality(), true, cfg.getMaxMessageAttachmentSize());
+            case MESSAGE_THUMBNAIL -> new ImageProcessingOptions(cfg.getMessageThumbnailMaxWidth(),
+                    cfg.getMessageThumbnailMaxHeight(), CropMode.FIT, cfg.getFormat(),
+                    cfg.getMessageThumbnailQuality(), true, cfg.getMaxMessageAttachmentSize());
         };
     }
 }

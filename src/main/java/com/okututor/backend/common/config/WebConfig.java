@@ -18,7 +18,7 @@ public class WebConfig {
                 registry.addMapping("/**")
                         .allowedOrigins(properties.getCors().getAllowedOrigins().toArray(String[]::new))
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                        .allowedHeaders("Authorization", "Content-Type", "Accept")
+                        .allowedHeaders("Authorization", "Content-Type", "Accept", "X-Time-Zone")
                         .maxAge(3600);
             }
         };

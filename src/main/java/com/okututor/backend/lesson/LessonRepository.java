@@ -77,4 +77,35 @@ public interface LessonRepository extends JpaRepository<Lesson, UUID> {
             """)
     List<Lesson> calendarAll(@Param("from") java.time.Instant from,
                              @Param("to") java.time.Instant to);
+
+    // ---------- расписания / конфликты / напоминания ----------
+
+    /** конфликт «самостоятельных» уроков с интервалом (для проверки перед созданием/переносом). */
+    @Query("select case when count(l) > 0 then true else false end from Lesson l " +
+            "where l.status in :statuses and l.startAt < :to and l.endAt > :from " +
+            "and (l.student.id = :userId or l.teacher.id = :userId)")
+    boolean overlapsParticipant(@Param("userId") UUID userId,
+                                @Param("statuses") java.util.Collection<Lesson.Status> statuses,
+                                @Param("from") java.time.Instant from,
+                                @Param("to") java.time.Instant to);
+
+    /** как {@link #overlapsParticipant}, но исключает сам переносимый урок. */
+    @Query("select case when count(l) > 0 then true else false end from Lesson l " +
+            "where l.status in :statuses and l.id <> :excludeId " +
+            "and (l.student.id = :userId or l.teacher.id = :userId) " +
+            "and l.startAt < :to and (l.endAt is not null and l.endAt > :from)")
+    boolean overlapsParticipantExcluding(@Param("userId") UUID userId,
+                                         @Param("excludeId") UUID excludeId,
+                                         @Param("statuses") java.util.Collection<Lesson.Status> statuses,
+                                         @Param("from") java.time.Instant from,
+                                         @Param("to") java.time.Instant to);
+
+    java.util.List<Lesson> findByScheduleIdOrderByStartAtAsc(UUID scheduleId);
+
+    boolean existsByScheduleId(UUID scheduleId);
+
+    @Query("select l from Lesson l where l.status = :status and l.startAt >= :from and l.startAt <= :to order by l.startAt asc")
+    java.util.List<Lesson> findUpcomingForReminder(@Param("status") Lesson.Status status,
+                                                   @Param("from") java.time.Instant from,
+                                                   @Param("to") java.time.Instant to);
 }

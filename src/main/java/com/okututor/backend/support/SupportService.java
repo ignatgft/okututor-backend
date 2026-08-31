@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * устаревший фасад: логика разделена между {@link SupportTicketUserService}
@@ -102,10 +103,22 @@ public class SupportService {
         return userService.sendUserMessage(user, number, body);
     }
 
+    /** с вложением (multipart: body + file). */
+    @Transactional
+    public TicketMessageResponse sendUserMessage(User user, Long number, String body, MultipartFile file) {
+        return userService.sendUserMessage(user, number, body, file);
+    }
+
     /** @use {@link SupportTicketAdminService#sendAdminMessage} */
     @Transactional
     public TicketMessageResponse sendAdminMessage(User admin, Long number, String body) {
         return adminService.sendAdminMessage(admin, number, body);
+    }
+
+    /** с вложением (multipart: body + file). */
+    @Transactional
+    public TicketMessageResponse sendAdminMessage(User admin, Long number, String body, MultipartFile file) {
+        return adminService.sendAdminMessage(admin, number, body, file);
     }
 
     /** @use {@link SupportTicketUserService#messages} */

@@ -2,6 +2,8 @@ package com.okututor.backend.support;
 
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.common.error.FieldValidationException;
+import com.okututor.backend.media.MediaService;
+import com.okututor.backend.media.MessageAttachment;
 import com.okututor.backend.support.dto.SupportTicketCreateRequest;
 import com.okututor.backend.user.User;
 import java.util.Map;
@@ -11,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /** пользовательская сторона саппорта: создание, свои тикеты, переписка автора. */
 @Service
@@ -21,13 +24,16 @@ public class SupportTicketUserService {
     private final SupportTicketRepository ticketRepository;
     private final SupportTicketMessageRepository messageRepository;
     private final SupportTicketCore core;
+    private final MediaService mediaService;
 
     public SupportTicketUserService(SupportTicketRepository ticketRepository,
                                     SupportTicketMessageRepository messageRepository,
-                                    SupportTicketCore core) {
+                                    SupportTicketCore core,
+                                    MediaService mediaService) {
         this.ticketRepository = ticketRepository;
         this.messageRepository = messageRepository;
         this.core = core;
+        this.mediaService = mediaService;
     }
 
     @Transactional
@@ -77,15 +83,29 @@ public class SupportTicketUserService {
 
     @Transactional
     public SupportService.TicketMessageResponse sendUserMessage(User user, Long number, String body) {
+        return sendUserMessage(user, number, body, null);
+    }
+
+    @Transactional
+    public SupportService.TicketMessageResponse sendUserMessage(User user, Long number, String body, MultipartFile file) {
         SupportTicket ticket = ownedTicket(number, user);
         if (ticket.getStatus() == SupportTicket.Status.CLOSED) {
             throw ApiException.conflict("Ticket is closed. Reopen it first.");
         }
-        var message = core.postMessage(ticket, user, body, false);
+        String text = body == null ? "" : body.trim();
+        if (text.isEmpty() && (file == null || file.isEmpty())) {
+            throw new FieldValidationException(Map.of("body", "Message must not be empty"));
+        }
+        MessageAttachment attachment = (file != null && !file.isEmpty())
+                ? mediaService.storeClaimedMessageAttachment(user, file)
+                : null;
+        var message = core.postMessage(ticket, user, text, false, attachment);
         if (ticket.getStatus() == SupportTicket.Status.OPEN || ticket.getStatus() == null) {
             ticket.setStatus(SupportTicket.Status.IN_PROGRESS);
         }
-        ticket.setLastMessagePreview(SupportTicketCore.preview(body));
+        String preview = text.isEmpty() && attachment != null
+                ? attachment.getOriginalFilename() : SupportTicketCore.preview(text);
+        ticket.setLastMessagePreview(preview);
         ticketRepository.save(ticket);
         // порядок важен: сначала фиксируем поля сущности, затем атомарный
         // инкремент — иначе flush сущности затёр бы счётчик значением из памяти

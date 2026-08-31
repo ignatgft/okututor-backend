@@ -2,7 +2,6 @@ package com.okututor.backend.notification;
 
 import com.okututor.backend.user.User;
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -13,6 +12,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "notifications")
@@ -34,8 +35,11 @@ public class Notification {
     @Column(length = 255)
     private String link;
 
-    /** структурированный контекст события (enrollment_id, booking_id, ...); null у старых записей. */
-    @Convert(converter = JsonMapConverter.class)
+    /**
+     * структурированный контекст события (enrollment_id, booking_id, ...); null у старых записей.
+     * Hibernate 6 сериализует Map в jsonb нативно (без AttributeConverter → varchar mismatch).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> payload;
 
@@ -44,6 +48,14 @@ public class Notification {
 
     @Column(name = "read_at")
     private Instant readAt;
+
+    /** тип сущности-источника (APPLICATION, BOOKING, LESSON, ...) — для таймлайна и дедупа напоминаний. */
+    @Column(name = "entity_type", length = 30)
+    private String entityType;
+
+    /** id сущности-источника. */
+    @Column(name = "entity_id", length = 64)
+    private String entityId;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -73,5 +85,9 @@ public class Notification {
     public void setRead(boolean read) { this.read = read; }
     public Instant getReadAt() { return readAt; }
     public void setReadAt(Instant readAt) { this.readAt = readAt; }
+    public String getEntityType() { return entityType; }
+    public void setEntityType(String entityType) { this.entityType = entityType; }
+    public String getEntityId() { return entityId; }
+    public void setEntityId(String entityId) { this.entityId = entityId; }
     public Instant getCreatedAt() { return createdAt; }
 }

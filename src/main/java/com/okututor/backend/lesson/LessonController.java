@@ -44,21 +44,8 @@ public class LessonController {
     public LessonService.LessonResponse byId(@AuthenticationPrincipal UserPrincipal principal,
                                              @PathVariable UUID id) {
         User viewer = currentUser(principal);
-        Lesson lesson = lessonService.requireById(id);
-        if (!lesson.involves(viewer.getId())
-                && viewer.getRole() != com.okututor.backend.user.Role.ADMIN
-                && viewer.getRole() != com.okututor.backend.user.Role.SUPER_ADMIN) {
-            throw ApiException.forbidden("Not your lesson");
-        }
-        return new LessonService.LessonResponse(
-                lesson.getId(),
-                lesson.getTitle(),
-                counterpartOf(lesson, viewer),
-                lesson.getStartAt(),
-                lesson.getStatus().name(),
-                lesson.getStatus() != Lesson.Status.CANCELLED
-                        && lesson.getStatus() != Lesson.Status.COMPLETED,
-                lesson.getBooking() != null ? lesson.getBooking().getId() : null);
+        Lesson lesson = lessonService.requireParticipantView(id, viewer);
+        return lessonService.toResponse(lesson, viewer.getId());
     }
 
     @PostMapping("/api/v1/lessons")
@@ -70,52 +57,54 @@ public class LessonController {
         if (studentId == null) {
             throw new FieldValidationException(Map.of("student_id", "student_id is required"));
         }
+        String format = payload == null ? "ONLINE" : str(payload.get("format"));
+        LocationType locationType = locationType(payload == null ? null : payload.get("location_type"));
+        if ("OFFLINE".equalsIgnoreCase(format) && locationType == null) {
+            throw new FieldValidationException(Map.of("location_type",
+                    "location_type is required for OFFLINE lesson"));
+        }
         Lesson lesson = lessonService.create(tutor,
                 uuid(payload.get("course_id")),
                 studentId,
                 str(payload.get("title")),
-                instant(payload.get("start_at")));
+                instant(payload.get("start_at")),
+                locationType,
+                str(payload.get("location_address")),
+                str(payload.get("location_details")));
         return Map.of("id", lesson.getId().toString(), "status", lesson.getStatus().name());
     }
 
     @PostMapping("/api/v1/lessons/{id}/start")
     public ResponseEntity<Void> start(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id) {
-        requireParticipant(principal, id);
-        lessonService.start(id);
+        lessonService.start(currentUser(principal), id);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/api/v1/lessons/{id}/complete")
     public ResponseEntity<Void> complete(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id) {
-        requireParticipant(principal, id);
-        lessonService.complete(id);
+        lessonService.complete(currentUser(principal), id);
         return ResponseEntity.ok().build();
     }
 
+    /** отмена занятия с причиной (spec §9): {message} → bookreason; зеркалит статус брони. */
     @PostMapping("/api/v1/lessons/{id}/cancel")
-    public ResponseEntity<Void> cancel(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id) {
-        requireParticipant(principal, id);
-        lessonService.cancel(id);
+    public ResponseEntity<Void> cancel(@AuthenticationPrincipal UserPrincipal principal,
+                                       @PathVariable UUID id,
+                                       @RequestBody(required = false) CancelRequest request) {
+        String reason = request == null ? null : request.message();
+        lessonService.cancel(currentUser(principal), id, reason);
         return ResponseEntity.ok().build();
     }
 
-    // --- митинг-эндпоинты живут в MeetingController ---
-
-    private void requireParticipant(UserPrincipal principal, UUID lessonId) {
-        User viewer = currentUser(principal);
-        Lesson lesson = lessonService.requireById(lessonId);
-        boolean admin = viewer.getRole() == com.okututor.backend.user.Role.ADMIN
-                || viewer.getRole() == com.okututor.backend.user.Role.SUPER_ADMIN;
-        if (!lesson.involves(viewer.getId()) && !admin) {
-            throw ApiException.forbidden("Not your lesson");
-        }
+    /** перенос занятия на другой интервал. */
+    @PostMapping("/api/v1/lessons/{id}/reschedule")
+    public LessonService.LessonResponse reschedule(@AuthenticationPrincipal UserPrincipal principal,
+                                                   @PathVariable UUID id,
+                                                   @RequestBody LessonService.RescheduleRequest request) {
+        return lessonService.reschedule(currentUser(principal), id, request);
     }
 
-    private static String counterpartOf(Lesson lesson, User viewer) {
-        boolean teacherSide = viewer != null && viewer.getId().equals(lesson.getTeacherId());
-        User other = teacherSide ? lesson.getStudent() : lesson.getTeacher();
-        return other != null ? other.getFullName() : null;
-    }
+    public record CancelRequest(String message) {}
 
     private User currentUser(UserPrincipal principal) {
         if (principal == null) {
@@ -144,6 +133,18 @@ public class LessonController {
             return Instant.parse(value.toString());
         } catch (Exception e) {
             throw new FieldValidationException(Map.of("start_at", "Expected ISO-8601 instant"));
+        }
+    }
+
+    private static LocationType locationType(Object value) {
+        if (value == null || value.toString().isBlank()) {
+            return null;
+        }
+        try {
+            return LocationType.valueOf(value.toString().trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new FieldValidationException(Map.of("location_type",
+                    "location_type must be one of TUTOR_PLACE, STUDENT_PLACE, CENTER, OTHER"));
         }
     }
 }

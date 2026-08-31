@@ -10,6 +10,7 @@ import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.common.error.FieldValidationException;
 import com.okututor.backend.user.Role;
 import com.okututor.backend.user.User;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Map;
 import java.util.Optional;
@@ -27,7 +28,8 @@ class AvailabilityServiceTest {
     void setUp() {
         repository = mock(AvailabilitySlotRepository.class);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new AvailabilityService(repository, mock(com.okututor.backend.user.UserRepository.class));
+        service = new AvailabilityService(repository, mock(com.okututor.backend.user.UserRepository.class),
+                mock(com.okututor.backend.admin.AuditLogService.class));
         tutor = new User();
         tutor.setId(UUID.randomUUID());
         tutor.setRole(Role.TUTOR);
@@ -59,6 +61,78 @@ class AvailabilityServiceTest {
         assertThat(response.weekday()).isEqualTo("Monday");
         assertThat(response.start_time()).isEqualTo(LocalTime.of(18, 0).toString());
         assertThat(response.end_time()).isEqualTo("22:00");
+    }
+
+    @Test
+    void addDefaultsTimezoneToUtc() {
+        AvailabilityService.SlotResponse response = service.add(tutor,
+                Map.of("weekday", "Monday", "start_time", "18:00", "end_time", "22:00"));
+        assertThat(response.timezone()).isEqualTo("UTC");
+    }
+
+    @Test
+    void addAcceptsValidTimezone() {
+        AvailabilityService.SlotResponse response = service.add(tutor,
+                Map.of("weekday", "Tuesday", "start_time", "09:00", "end_time", "11:00",
+                        "timezone", "Asia/Bishkek"));
+        assertThat(response.timezone()).isEqualTo("Asia/Bishkek");
+    }
+
+    @Test
+    void addRejectsUnknownTimezone() {
+        assertThatThrownBy(() -> service.add(tutor,
+                Map.of("weekday", "Monday", "start_time", "18:00", "end_time", "22:00",
+                        "timezone", "NotA/Zone")))
+                .isInstanceOf(FieldValidationException.class)
+                .extracting(e -> ((FieldValidationException) e).getFieldErrors())
+                .satisfies(errors -> assertThat((Map<String, String>) errors).containsKey("timezone"));
+    }
+
+    @Test
+    void findCommonSlotsIntersectsTutorAndStudentWindows() {
+        UUID tutorId = tutor.getId();
+        UUID studentId = UUID.randomUUID();
+
+        AvailabilitySlot tutorSlot = new AvailabilitySlot();
+        tutorSlot.setWeekday("Tuesday");
+        tutorSlot.setStartTime(LocalTime.of(10, 0));
+        tutorSlot.setEndTime(LocalTime.of(14, 0));
+
+        AvailabilitySlot studentSlot = new AvailabilitySlot();
+        studentSlot.setWeekday("Tuesday");
+        studentSlot.setStartTime(LocalTime.of(12, 0));
+        studentSlot.setEndTime(LocalTime.of(16, 0));
+
+        when(repository.findByTutorIdAndWeekday(tutorId, "Tuesday")).thenReturn(java.util.List.of(tutorSlot));
+        when(repository.findByTutorIdAndWeekday(studentId, "Tuesday")).thenReturn(java.util.List.of(studentSlot));
+
+        LocalDate tuesday = LocalDate.of(2026, 9, 1); // Tuesday
+        var slots = service.findCommonSlots(tutorId, studentId, tuesday);
+
+        assertThat(slots).hasSize(1);
+        assertThat(slots.get(0).start_local()).isEqualTo("12:00");
+        assertThat(slots.get(0).end_local()).isEqualTo("14:00");
+    }
+
+    @Test
+    void findCommonSlotsReturnsEmptyWhenNoOverlap() {
+        UUID tutorId = tutor.getId();
+        UUID studentId = UUID.randomUUID();
+
+        AvailabilitySlot tutorSlot = new AvailabilitySlot();
+        tutorSlot.setWeekday("Tuesday");
+        tutorSlot.setStartTime(LocalTime.of(9, 0));
+        tutorSlot.setEndTime(LocalTime.of(10, 0));
+
+        AvailabilitySlot studentSlot = new AvailabilitySlot();
+        studentSlot.setWeekday("Tuesday");
+        studentSlot.setStartTime(LocalTime.of(11, 0));
+        studentSlot.setEndTime(LocalTime.of(12, 0));
+
+        when(repository.findByTutorIdAndWeekday(tutorId, "Tuesday")).thenReturn(java.util.List.of(tutorSlot));
+        when(repository.findByTutorIdAndWeekday(studentId, "Tuesday")).thenReturn(java.util.List.of(studentSlot));
+
+        assertThat(service.findCommonSlots(tutorId, studentId, LocalDate.of(2026, 9, 1))).isEmpty();
     }
 
     @Test

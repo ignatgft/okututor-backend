@@ -25,6 +25,21 @@ public final class NotificationType {
     public static final String TUTOR_APPLICATION_APPROVED = "TUTOR_APPLICATION_APPROVED";
     public static final String TUTOR_APPLICATION_REJECTED = "TUTOR_APPLICATION_REJECTED";
 
+    // ----- розписание заявки -----
+    public static final String APPLICATION_NEEDS_INFO = "APPLICATION_NEEDS_INFO";
+    public static final String APPLICATION_INFO_SUBMITTED = "APPLICATION_INFO_SUBMITTED";
+    public static final String SCHEDULE_PROPOSED = "SCHEDULE_PROPOSED";
+    public static final String SCHEDULE_CONFIRMED = "SCHEDULE_CONFIRMED";
+    public static final String SCHEDULE_CHANGED = "SCHEDULE_CHANGED";
+
+    // ----- занятия -----
+    public static final String LESSON_CREATED = "LESSON_CREATED";
+    public static final String LESSON_RESCHEDULED = "LESSON_RESCHEDULED";
+    public static final String LESSON_CANCELLED = "LESSON_CANCELLED";
+    public static final String LESSON_STARTED = "LESSON_STARTED";
+    public static final String LESSON_COMPLETED = "LESSON_COMPLETED";
+    public static final String LESSON_REMINDER = "LESSON_REMINDER";
+
     // ----- системные -----
     public static final String MESSAGE = "MESSAGE";
     public static final String SYSTEM = "SYSTEM";
