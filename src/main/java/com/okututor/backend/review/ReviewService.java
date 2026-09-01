@@ -86,12 +86,16 @@ public class ReviewService {
         return toResponse(persistReview(student, courseId, rating, comment, booking));
     }
 
-    /** свободный эндпоинт: требует любую COMPLETED-бронь этого студента по курсу. */
+    /** свободный эндпоинт: требует COMPLETED-бронь или факт посещения (meeting_sessions). */
     @Transactional
     public ReviewResponse create(User student, UUID courseId, Integer rating, String comment) {
         boolean hasAttended = meetingSessionRepository.hasAttendedLesson(courseId, student.getId());
-        if (!hasAttended) {
-            throw ApiException.conflict("Отзыв можно оставить только после реального посещения занятия");
+        boolean hasCompletedBooking = repository.existsCompletedBooking(courseId, student.getId())
+                || bookingRepository.existsByCourseIdAndStudentIdAndStatus(
+                        courseId, student.getId(), Booking.Status.COMPLETED);
+        if (!hasAttended && !hasCompletedBooking) {
+            throw ApiException.forbidden(com.okututor.backend.common.error.ErrorCodes.REVIEW_NOT_ALLOWED,
+                    "You can review the course after the lesson is completed");
         }
         return toResponse(persistReview(student, courseId, rating, comment, null));
     }
@@ -99,10 +103,15 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public CanReviewResponse canReview(UUID studentId, UUID courseId) {
         boolean hasAttended = meetingSessionRepository.hasAttendedLesson(courseId, studentId);
+        boolean hasCompletedBooking = repository.existsCompletedBooking(courseId, studentId)
+                || bookingRepository.existsByCourseIdAndStudentIdAndStatus(
+                        courseId, studentId, Booking.Status.COMPLETED);
+        boolean eligible = (hasAttended || hasCompletedBooking)
+                && repository.findByCourseIdAndStudentId(courseId, studentId).isEmpty();
         boolean alreadyReviewed = repository.findByCourseIdAndStudentId(courseId, studentId).isPresent();
         return new CanReviewResponse(
-            hasAttended && !alreadyReviewed,
-            hasAttended,
+            eligible,
+            hasAttended || hasCompletedBooking,
             alreadyReviewed
         );
     }

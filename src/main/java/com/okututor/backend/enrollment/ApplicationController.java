@@ -124,18 +124,33 @@ public class ApplicationController {
     @PreAuthorize("hasRole('TUTOR')")
     public EnrollmentService.EnrollmentResponse requestInfo(@AuthenticationPrincipal UserPrincipal principal,
                                                             @PathVariable UUID id,
-                                                            @RequestBody(required = false) RequestInfoRequest request) {
+                                                            @RequestBody(required = false) Map<String, Object> body) {
+        String request = body == null ? null : firstNonBlank(
+                objToStr(body.get("request")), objToStr(body.get("question")), objToStr(body.get("message")));
         return workflowService.requestInfo(currentUser(principal), id,
-                new ApplicationWorkflowService.RequestInfoRequest(request == null ? null : request.request()));
+                new ApplicationWorkflowService.RequestInfoRequest(request));
     }
 
     @PostMapping("/api/v1/applications/{id}/submit-info")
     @PreAuthorize("hasRole('STUDENT')")
     public EnrollmentService.EnrollmentResponse submitInfo(@AuthenticationPrincipal UserPrincipal principal,
                                                            @PathVariable UUID id,
-                                                           @RequestBody(required = false) SubmitInfoRequest request) {
+                                                           @RequestBody(required = false) Map<String, Object> body) {
+        String message = body == null ? null : firstNonBlank(
+                objToStr(body.get("message")), objToStr(body.get("request")), objToStr(body.get("question")));
         return workflowService.submitInfo(currentUser(principal), id,
-                new ApplicationWorkflowService.SubmitInfoRequest(request == null ? null : request.message()));
+                new ApplicationWorkflowService.SubmitInfoRequest(message));
+    }
+
+    @PostMapping("/api/v1/applications/{id}/provide-info")
+    @PreAuthorize("hasRole('STUDENT')")
+    public EnrollmentService.EnrollmentResponse provideInfo(@AuthenticationPrincipal UserPrincipal principal,
+                                                            @PathVariable UUID id,
+                                                            @RequestBody(required = false) Map<String, Object> body) {
+        String message = body == null ? null : firstNonBlank(
+                objToStr(body.get("message")), objToStr(body.get("request")), objToStr(body.get("question")));
+        return workflowService.submitInfo(currentUser(principal), id,
+                new ApplicationWorkflowService.SubmitInfoRequest(message));
     }
 
     /** таймлайн заявки: заявка → расписание → занятия (audit-log, участник или админ). */
@@ -150,10 +165,17 @@ public class ApplicationController {
     public java.util.List<ScheduleService.AvailableSlotResponse> availableSlots(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
-            @RequestParam String from_date,
-            @RequestParam String to_date,
+            @RequestParam(required = false) String from_date,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to_date,
+            @RequestParam(required = false) String to,
             @RequestParam(required = false) String timezone) {
-        return scheduleService.availableSlots(currentUser(principal), id, from_date, to_date, timezone);
+        String resolvedFrom = firstNonBlank(from, from_date);
+        String resolvedTo = firstNonBlank(to, to_date);
+        if (resolvedFrom == null || resolvedTo == null) {
+            throw ApiException.validation("from and to (yyyy-MM-dd) are required");
+        }
+        return scheduleService.availableSlots(currentUser(principal), id, resolvedFrom, resolvedTo, timezone);
     }
 
     /** история предложений расписания по заявке. */
@@ -174,6 +196,17 @@ public class ApplicationController {
 
     private static LocalTime parseTimeOf(String value) {
         return value == null || value.isBlank() ? null : ScheduleParser.parseTime(value);
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v;
+        }
+        return null;
+    }
+
+    private static String objToStr(Object o) {
+        return o == null ? null : o.toString();
     }
 
     private User currentUser(UserPrincipal principal) {

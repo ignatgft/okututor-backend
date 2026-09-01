@@ -5,6 +5,8 @@ import com.okututor.backend.admin.AuditLogService;
 import com.okututor.backend.booking.Booking;
 import com.okututor.backend.booking.BookingRepository;
 import com.okututor.backend.booking.ScheduleParser;
+import com.okututor.backend.lesson.Lesson;
+import com.okututor.backend.lesson.LessonRepository;
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.common.error.ErrorCodes;
 import com.okututor.backend.course.Course;
@@ -73,8 +75,22 @@ public class EnrollmentService {
             String time,
             Integer duration_minutes,
             String timezone,
-            SeriesRequest series
-    ) {}
+            SeriesRequest series,
+            // совместимость с фронтовым ScheduleWizard (плоский payload вместо вложенного series)
+            String start_date,
+            String end_date,
+            List<String> days,
+            List<String> weekdays,
+            String format,
+            String location_type,
+            Map<String, Object> location,
+            Integer count
+    ) {
+        public AcceptAndScheduleRequest(String date, String time, Integer duration_minutes, String timezone,
+                                        SeriesRequest series) {
+            this(date, time, duration_minutes, timezone, series, null, null, null, null, null, null, null, null);
+        }
+    }
 
     /** серия занятий по расписанию: дни недели внутри [start_date, end_date] в одно время. */
     public record SeriesRequest(
@@ -100,19 +116,22 @@ public class EnrollmentService {
     private final EnrollmentRepository repository;
     private final CourseService courseService;
     private final BookingRepository bookingRepository;
+    private final LessonRepository lessonRepository;
     private final NotificationService notificationService;
     private final MessagingService messagingService;
     private final AvailabilitySlotRepository availabilitySlotRepository;
     private final AuditLogService auditLogService;
 
     public EnrollmentService(EnrollmentRepository repository, CourseService courseService,
-                             BookingRepository bookingRepository, NotificationService notificationService,
+                             BookingRepository bookingRepository, LessonRepository lessonRepository,
+                             NotificationService notificationService,
                              MessagingService messagingService,
                              AvailabilitySlotRepository availabilitySlotRepository,
                              AuditLogService auditLogService) {
         this.repository = repository;
         this.courseService = courseService;
         this.bookingRepository = bookingRepository;
+        this.lessonRepository = lessonRepository;
         this.notificationService = notificationService;
         this.messagingService = messagingService;
         this.availabilitySlotRepository = availabilitySlotRepository;
@@ -305,6 +324,19 @@ public class EnrollmentService {
         if (req.series() != null) {
             return acceptAndScheduleSeries(teacher, enrollment, req);
         }
+        // фронт ScheduleWizard шлёт плоский payload с days/start_date/end_date вместо вложенного series
+        List<String> flatDays = req.days() != null && !req.days().isEmpty() ? req.days() : req.weekdays();
+        if (flatDays != null && !flatDays.isEmpty()
+                && req.start_date() != null && req.end_date() != null) {
+            SeriesRequest fakeSeries = new SeriesRequest(
+                    req.start_date(), req.end_date(),
+                    req.time(), flatDays, req.duration_minutes(), req.timezone());
+            AcceptAndScheduleRequest wrapped = new AcceptAndScheduleRequest(
+                    req.date(), req.time(), req.duration_minutes(), req.timezone(),
+                    fakeSeries, req.start_date(), req.end_date(), req.days(), req.weekdays(),
+                    req.format(), req.location_type(), req.location(), req.count());
+            return acceptAndScheduleSeries(teacher, enrollment, wrapped);
+        }
 
         // 2. Парсить дату/время в зоне запроса; длительность из допустимого множества
         Instant startAt = ScheduleParser.combine(req.date(), req.time(), req.timezone());
@@ -337,6 +369,22 @@ public class EnrollmentService {
             bookingRepository.saveAndFlush(booking);
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
             throw ApiException.conflict("This time slot is already booked");
+        }
+
+        // 4b. Зеркалим в Lesson, чтобы GET /lessons и /calendar отдавали занятие обеим сторонам
+        try {
+            Lesson lesson = new Lesson();
+            lesson.setCourse(enrollment.getCourse());
+            lesson.setTeacher(teacher);
+            lesson.setStudent(enrollment.getStudent());
+            lesson.setBooking(booking);
+            lesson.setStartAt(startAt);
+            lesson.setEndAt(endAt);
+            lesson.setStatus(Lesson.Status.SCHEDULED);
+            lesson.setTitle(enrollment.getCourse() != null ? enrollment.getCourse().getTitle() : "Tutoring session");
+            lessonRepository.save(lesson);
+        } catch (Exception ignored) {
+            // best-effort: бронь уже создана, урок-зеркало не должен откатывать транзакцию
         }
 
         // 5. Прямой чат студент↔тьютор, чтобы фронт сразу открыл его
@@ -459,6 +507,27 @@ public class EnrollmentService {
 
         // единая атомарная вставка (уникальные индексы teacher/student + start_at защищают от гонок на commit)
         List<Booking> saved = bookingRepository.saveAll(created);
+
+        // зеркалим уроки для календаря/GET lessons
+        if (!saved.isEmpty()) {
+            List<Lesson> lessons = new java.util.ArrayList<>();
+            for (Booking b : saved) {
+                Lesson lesson = new Lesson();
+                lesson.setCourse(enrollment.getCourse());
+                lesson.setTeacher(teacher);
+                lesson.setStudent(enrollment.getStudent());
+                lesson.setBooking(b);
+                lesson.setStartAt(b.getStartAt());
+                lesson.setEndAt(b.getEndAt());
+                lesson.setStatus(Lesson.Status.SCHEDULED);
+                lesson.setTitle(enrollment.getCourse() != null ? enrollment.getCourse().getTitle() : "Tutoring session");
+                lessons.add(lesson);
+            }
+            try {
+                lessonRepository.saveAll(lessons);
+            } catch (Exception ignored) {
+            }
+        }
 
         ensureConversation(enrollment);
 

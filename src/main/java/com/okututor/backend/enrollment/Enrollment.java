@@ -28,14 +28,15 @@ import org.hibernate.type.SqlTypes;
  * Заявка ученика на курс (= CourseApplication). Домен «заявка — расписание — занятия»:
  *
  * <pre>
- * PENDING → ACCEPTED → SCHEDULE_PENDING → SCHEDULE_PROPOSED → SCHEDULED
- *    │         │              │                 │                  │
- *    ├→ NEEDS_INFO            └→ (turnera)      ├→ SCHEDULE_PENDING  └→ CANCELLED/EXPIRED
- *    └→ REJECTED / CANCELLED / EXPIRED          └→ CANCELLED
+ * PENDING → ACCEPTED → SCHEDULE_PENDING → SCHEDULE_PROPOSED → SCHEDULED → COMPLETED
+ *    │         │              │                 │                  │          │
+ *    ├→ NEEDS_INFO            └→ (turnera)      ├→ SCHEDULE_PENDING  └→ CANCELLED/EXPIRED/ COMPLETED
+ *    └→ REJECTED / CANCELLED / EXPIRED          └→ CANCELLED/EXPIRED
  * </pre>
  *
  * Предпочтения ученика (days/время/формат) — это ПОЖЕЛАНИЯ, а не расписание:
  * реальные встречи порождаются только из подтверждённого Schedule.
+ * COMPLETED — все занятия по SCHEDULED завершены (Lesson COMPLETED).
  */
 @Entity
 @Table(name = "enrollments")
@@ -43,7 +44,7 @@ public class Enrollment {
 
     public enum Status {
         PENDING, NEEDS_INFO, ACCEPTED, REJECTED,
-        SCHEDULE_PENDING, SCHEDULE_PROPOSED, SCHEDULED, CANCELLED, EXPIRED
+        SCHEDULE_PENDING, SCHEDULE_PROPOSED, SCHEDULED, CANCELLED, EXPIRED, COMPLETED
     }
 
     @Id
@@ -119,10 +120,11 @@ public class Enrollment {
     private static final Map<Status, List<Status>> ALLOWED = Map.of(
             Status.PENDING, List.of(Status.NEEDS_INFO, Status.ACCEPTED, Status.REJECTED, Status.CANCELLED, Status.EXPIRED),
             Status.NEEDS_INFO, List.of(Status.PENDING, Status.ACCEPTED, Status.REJECTED, Status.CANCELLED, Status.EXPIRED),
-            Status.ACCEPTED, List.of(Status.SCHEDULE_PENDING, Status.CANCELLED, Status.EXPIRED),
-            Status.SCHEDULE_PENDING, List.of(Status.SCHEDULE_PROPOSED, Status.CANCELLED, Status.EXPIRED),
-            Status.SCHEDULE_PROPOSED, List.of(Status.SCHEDULED, Status.SCHEDULE_PENDING, Status.CANCELLED, Status.EXPIRED),
-            Status.SCHEDULED, List.of(Status.CANCELLED),
+            Status.ACCEPTED, List.of(Status.SCHEDULE_PENDING, Status.SCHEDULE_PROPOSED, Status.CANCELLED, Status.EXPIRED, Status.COMPLETED),
+            Status.SCHEDULE_PENDING, List.of(Status.SCHEDULE_PROPOSED, Status.CANCELLED, Status.EXPIRED, Status.COMPLETED),
+            Status.SCHEDULE_PROPOSED, List.of(Status.SCHEDULED, Status.SCHEDULE_PENDING, Status.CANCELLED, Status.EXPIRED, Status.COMPLETED, Status.SCHEDULE_PROPOSED),
+            Status.SCHEDULED, List.of(Status.CANCELLED, Status.COMPLETED, Status.EXPIRED),
+            Status.COMPLETED, List.of(),
             Status.REJECTED, List.of(),
             Status.CANCELLED, List.of(),
             Status.EXPIRED, List.of());
@@ -132,7 +134,7 @@ public class Enrollment {
             Status.PENDING, Status.NEEDS_INFO, Status.ACCEPTED, Status.SCHEDULE_PENDING, Status.SCHEDULE_PROPOSED);
 
     private static final List<Status> STUDENT_CANCELABLE =
-            List.of(Status.PENDING, Status.NEEDS_INFO, Status.ACCEPTED, Status.SCHEDULE_PENDING, Status.SCHEDULE_PROPOSED);
+            List.of(Status.PENDING, Status.NEEDS_INFO, Status.ACCEPTED, Status.SCHEDULE_PENDING, Status.SCHEDULE_PROPOSED, Status.SCHEDULED);
 
     /**
      * Проверяемый бэкендом переход заявки. Незаконные переходы (REJECTED→ACCEPTED,

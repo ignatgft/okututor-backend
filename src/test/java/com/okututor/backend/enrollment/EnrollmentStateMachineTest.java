@@ -61,6 +61,31 @@ class EnrollmentStateMachineTest {
     }
 
     @Test
+    void scheduledCanTransitionToCompletedAndIsTerminal() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.SCHEDULED);
+        e.transitionTo(Enrollment.Status.COMPLETED);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.COMPLETED);
+        assertThatThrownBy(() -> e.transitionTo(Enrollment.Status.CANCELLED))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("INVALID_APPLICATION_STATE");
+    }
+
+    @Test
+    void counterSelfLoopOnScheduleProposedIsAllowed() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.SCHEDULE_PROPOSED);
+        e.transitionTo(Enrollment.Status.SCHEDULE_PROPOSED);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.SCHEDULE_PROPOSED);
+    }
+
+    @Test
+    void acceptedCanDirectlyProposeSchedule() {
+        Enrollment e = enrollmentWithStatus(Enrollment.Status.ACCEPTED);
+        e.transitionTo(Enrollment.Status.SCHEDULE_PROPOSED);
+        assertThat(e.getStatus()).isEqualTo(Enrollment.Status.SCHEDULE_PROPOSED);
+    }
+
+    @Test
     void notRequestedResponseHasSpecialStatus() {
         assertThat(EnrollmentService.EnrollmentResponse.notRequested().status())
                 .isEqualTo("NOT_REQUESTED");

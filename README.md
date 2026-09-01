@@ -54,6 +54,25 @@ mvn spring-boot:run
 5. Наружу открыт только `/actuator/health`; остальное закрывается reverse-proxy.
 6. Валидатор `ProdEnvValidator` не даст стартовать с отсутствующими/слабыми секретами.
 
+## Два флоу расписания
+
+**A) Immediate — `accept-and-schedule` (без confirm студента)**
+```
+STUDENT: POST /courses/{id}/enroll {message, preferred_schedule}
+TUTOR:   POST /enrollments/{id}/accept-and-schedule {date,time,duration_minutes,timezone, series?{start_date,end_date,time,weekdays,duration_minutes}}
+→ enrollment PENDING→ACCEPTED + BOOKING CONFIRMED + LESSON SCHEDULED (видны в /lessons и /calendar) + NOTIF APPLICATION_ACCEPTED
+```
+
+**B) Negotiated — `propose → студент accept/reject/counter`**
+```
+TUTOR:   POST /schedule/applications/{id}/propose {timezone,start_date,end_date,duration_minutes,slots:[{weekday,start_time,end_time}],message?}
+→ enrollment →SCHEDULE_PROPOSED + proposal PENDING + NOTIF SCHEDULE_PROPOSED
+STUDENT: POST /schedule/proposals/{id}/accept  → SCHEDULED + Booking/Lesson на [start_date,end_date] по слотам (конфликты пропускаются), NOTIF SCHEDULE_CONFIRMED
+         POST /schedule/proposals/{id}/reject  → SCHEDULE_PENDING + NOTIF SCHEDULE_CHANGED
+         POST /schedule/proposals/{id}/counter {same as propose} → новое PENDING, старое SUPERSEDED, NOTIF SCHEDULE_PROPOSED
+```
+**Итог обоих путей:** `GET /lessons` и `GET /calendar?from&to` отдают материализованные занятия с `joinable`, `location_type`; `can-review` открывается после `COMPLETED` booking/lesson; `timeline` (`GET /applications/{id}/timeline`) отражает `APPLICATION_*`/`SCHEDULE_*`/`LESSONS_GENERATED`/`APPLICATION_COMPLETED`.
+
 ## Тесты
 
 ```bash

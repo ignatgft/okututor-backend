@@ -57,9 +57,10 @@ class EnrollmentSeriesTest {
         messagingService = mock(MessagingService.class);
         availabilitySlotRepository = mock(AvailabilitySlotRepository.class);
         auditLogService = mock(AuditLogService.class);
+        com.okututor.backend.lesson.LessonRepository lessonRepository = mock(com.okututor.backend.lesson.LessonRepository.class);
 
         service = new EnrollmentService(
-                enrollmentRepository, courseService, bookingRepository,
+                enrollmentRepository, courseService, bookingRepository, lessonRepository,
                 notificationService, messagingService, availabilitySlotRepository,
                 auditLogService
         );

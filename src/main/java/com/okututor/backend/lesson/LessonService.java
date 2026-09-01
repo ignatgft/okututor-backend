@@ -9,6 +9,8 @@ import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.common.error.ErrorCodes;
 import com.okututor.backend.course.Course;
 import com.okututor.backend.course.CourseRepository;
+import com.okututor.backend.enrollment.Enrollment;
+import com.okututor.backend.enrollment.EnrollmentRepository;
 import com.okututor.backend.notification.NotificationService;
 import com.okututor.backend.notification.NotificationType;
 import com.okututor.backend.user.User;
@@ -49,16 +51,19 @@ public class LessonService {
     private final LessonRepository lessonRepository;
     private final BookingRepository bookingRepository;
     private final CourseRepository courseRepository;
+    private final EnrollmentRepository enrollmentRepository;
     private final UserService userService;
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
 
     public LessonService(LessonRepository lessonRepository, BookingRepository bookingRepository,
-                         CourseRepository courseRepository, UserService userService,
+                         CourseRepository courseRepository, EnrollmentRepository enrollmentRepository,
+                         UserService userService,
                          NotificationService notificationService, AuditLogService auditLogService) {
         this.lessonRepository = lessonRepository;
         this.bookingRepository = bookingRepository;
         this.courseRepository = courseRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.userService = userService;
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
@@ -129,9 +134,43 @@ public class LessonService {
             booking.transitionTo(Booking.Status.COMPLETED);
             bookingRepository.save(booking);
         }
+        // если все занятия расписания завершены — заявка переходит в COMPLETED
+        tryCompleteEnrollment(lesson);
         notifyOccupants(lesson, NotificationType.LESSON_COMPLETED,
                 "Занятие «%s» завершено — можно оставить отзыв".formatted(titleOf(lesson)));
         auditLogService.logSync(AuditEntry.of(actor.getId(), "LESSON_COMPLETED", "LESSON", lesson.getId()));
+    }
+
+    private void tryCompleteEnrollment(Lesson lesson) {
+        try {
+            Enrollment enrollment = null;
+            if (lesson.getSchedule() != null) {
+                enrollment = lesson.getSchedule().getApplication();
+            } else if (lesson.getBooking() != null) {
+                enrollment = lesson.getBooking().getEnrollment();
+            }
+            if (enrollment == null || enrollment.getStatus() != Enrollment.Status.SCHEDULED) {
+                return;
+            }
+            boolean allDone;
+            if (lesson.getSchedule() != null) {
+                var all = lessonRepository.findByScheduleIdOrderByStartAtAsc(lesson.getSchedule().getId());
+                allDone = !all.isEmpty() && all.stream().allMatch(l ->
+                        l.getStatus() == Lesson.Status.COMPLETED || l.getStatus() == Lesson.Status.CANCELLED);
+            } else {
+                // одиночное занятие без расписания — завершение одного урока = завершение заявки
+                allDone = true;
+            }
+            if (allDone) {
+                String old = enrollment.getStatus().name();
+                enrollment.transitionTo(Enrollment.Status.COMPLETED);
+                enrollmentRepository.save(enrollment);
+                auditLogService.logSync(com.okututor.backend.admin.AuditEntry.of(
+                        lesson.getTeacherId(), "APPLICATION_COMPLETED", "APPLICATION", enrollment.getId())
+                        .withValues(old, Enrollment.Status.COMPLETED.name()));
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     /** отмена с причиной; зеркалируется в связанную бронь (spec §9/§32). */

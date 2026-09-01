@@ -237,6 +237,19 @@ public class ScheduleService {
     public List<ScheduleProposalResponse> listProposals(User viewer, UUID applicationId) {
         requireApplicationParticipant(applicationId, viewer);
         return proposalRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId).stream()
+                .sorted((a, b) -> {
+                    boolean aPending = a.getStatus() == ScheduleProposal.Status.PENDING;
+                    boolean bPending = b.getStatus() == ScheduleProposal.Status.PENDING;
+                    if (aPending != bPending) {
+                        return aPending ? -1 : 1;
+                    }
+                    Instant ca = a.getCreatedAt();
+                    Instant cb = b.getCreatedAt();
+                    if (ca == null && cb == null) return 0;
+                    if (ca == null) return 1;
+                    if (cb == null) return -1;
+                    return cb.compareTo(ca);
+                })
                 .map(this::toProposalResponse).toList();
     }
 
@@ -249,20 +262,44 @@ public class ScheduleService {
 
     // ---------------- accept/reject/counter ----------------
 
-    /** студент подтверждает расписание → одновременно материализуются конкретные занятия. */
+    /** студент подтверждает расписание → одновременно материализуются конкретные занятия. Идемпотентно. */
     @Transactional
     public AcceptResponse accept(User student, UUID proposalId) {
         ScheduleProposal proposal = requireProposal(proposalId);
         Enrollment app = proposal.getApplication();
         requireApplicationOwner(app, student.getId());
 
+        // идемпотентность: повторный accept уже принятого предложения не меняет состояние
+        if (proposal.getStatus() == ScheduleProposal.Status.ACCEPTED) {
+            Schedule schedule = proposal.getSchedule();
+            if (schedule == null) {
+                throw ApiException.conflict(ErrorCodes.SCHEDULE_NOT_AVAILABLE,
+                        "The proposed schedule has no slots");
+            }
+            List<UUID> ids = existingBookings(schedule);
+            if (!ids.isEmpty()) {
+                schedule.setStatus(Schedule.Status.CONFIRMED);
+                scheduleRepository.save(schedule);
+            }
+            return toAcceptResponse(schedule, 0, List.of(), ids);
+        }
         if (proposal.getStatus() != ScheduleProposal.Status.PENDING) {
             throw ApiException.conflict(ErrorCodes.INVALID_APPLICATION_STATE,
                     "This schedule proposal is no longer pending");
         }
-        if (app.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED) {
+        if (app.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED
+                && app.getStatus() != Enrollment.Status.SCHEDULED) {
             throw ApiException.conflict(ErrorCodes.INVALID_APPLICATION_STATE,
                     "The application is not awaiting schedule confirmation");
+        }
+        // already confirmed via previous accept (enrollment already SCHEDULED) → idempotent short-circuit
+        if (app.getStatus() == Enrollment.Status.SCHEDULED
+                && proposal.getStatus() == ScheduleProposal.Status.PENDING
+                && bookingRepository.existsByScheduleId(proposal.getSchedule() != null ? proposal.getSchedule().getId() : null)) {
+            Schedule schedule = proposal.getSchedule();
+            schedule.setStatus(Schedule.Status.CONFIRMED);
+            scheduleRepository.save(schedule);
+            return toAcceptResponse(schedule, 0, List.of(), existingBookings(schedule));
         }
         Schedule schedule = proposal.getSchedule();
         if (schedule == null || schedule.getSlots().isEmpty()) {

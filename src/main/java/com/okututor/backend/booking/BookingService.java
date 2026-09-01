@@ -1,10 +1,12 @@
 package com.okututor.backend.booking;
 
+import com.okututor.backend.admin.AuditEntry;
+import com.okututor.backend.admin.AuditLogService;
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.course.Course;
 import com.okututor.backend.course.CourseService;
-import com.okututor.backend.enrollment.EnrollmentRepository;
 import com.okututor.backend.enrollment.Enrollment;
+import com.okututor.backend.enrollment.EnrollmentRepository;
 import com.okututor.backend.notification.NotificationService;
 import com.okututor.backend.notification.NotificationType;
 import com.okututor.backend.user.User;
@@ -46,13 +48,16 @@ public class BookingService {
     private final CourseService courseService;
     private final EnrollmentRepository enrollmentRepository;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     public BookingService(BookingRepository repository, CourseService courseService,
-                          EnrollmentRepository enrollmentRepository, NotificationService notificationService) {
+                          EnrollmentRepository enrollmentRepository, NotificationService notificationService,
+                          AuditLogService auditLogService) {
         this.repository = repository;
         this.courseService = courseService;
         this.enrollmentRepository = enrollmentRepository;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -196,6 +201,8 @@ public class BookingService {
         booking.transitionTo(Booking.Status.COMPLETED);
         Booking saved = repository.save(booking);
         BookingResponse response = toResponse(saved, ZoneOffset_UTC());
+        // если занятие привязано к заявке без расписания — одиночное занятие = заявка COMPLETED
+        tryCompleteEnrollment(saved);
         // уведомить студента о завершении занятия (оценка теперь доступна)
         Map<String, Object> payload = bookingPayload(saved);
         notificationService.notify(saved.getStudentId(),
@@ -204,6 +211,26 @@ public class BookingService {
                 "/student/schedule",
                 payload);
         return response;
+    }
+
+    private void tryCompleteEnrollment(Booking booking) {
+        try {
+            if (booking.getSchedule() != null) {
+                return; // расписанию управляет LessonService
+            }
+            Enrollment enrollment = booking.getEnrollment();
+            if (enrollment == null || enrollment.getStatus() != Enrollment.Status.SCHEDULED) {
+                // одиночные брони через accept-and-schedule создают enrollment ACCEPTED, не SCHEDULED — не переводим
+                // но если enrollment уже SCHEDULED (будущее) — завершаем
+                return;
+            }
+            String old = enrollment.getStatus().name();
+            enrollment.transitionTo(Enrollment.Status.COMPLETED);
+            enrollmentRepository.save(enrollment);
+            auditLogService.logSync(AuditEntry.of(booking.getTeacherId(), "APPLICATION_COMPLETED", "APPLICATION", enrollment.getId())
+                    .withValues(old, Enrollment.Status.COMPLETED.name()));
+        } catch (Exception ignored) {
+        }
     }
 
     private void notifyOccupants(Booking booking, String type, String message, String link) {

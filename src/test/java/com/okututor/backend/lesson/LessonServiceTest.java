@@ -49,11 +49,12 @@ class LessonServiceTest {
         lessonRepository = mock(LessonRepository.class);
         bookingRepository = mock(BookingRepository.class);
         courseRepository = mock(CourseRepository.class);
+        com.okututor.backend.enrollment.EnrollmentRepository enrollmentRepository = mock(com.okututor.backend.enrollment.EnrollmentRepository.class);
         userService = mock(UserService.class);
         notificationService = mock(NotificationService.class);
         auditLogService = mock(AuditLogService.class);
 
-        service = new LessonService(lessonRepository, bookingRepository, courseRepository,
+        service = new LessonService(lessonRepository, bookingRepository, courseRepository, enrollmentRepository,
                 userService, notificationService, auditLogService);
 
         teacher = new User();
