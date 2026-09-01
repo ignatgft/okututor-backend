@@ -31,7 +31,27 @@ public class LiveKitTokenService {
     private final Duration ttl;
 
     public LiveKitTokenService(AppProperties properties) {
-        this.secretKey = Keys.hmacShaKeyFor(properties.getLivekit().getApiSecret().getBytes(StandardCharsets.UTF_8));
+        String rawSecret = properties.getLivekit().getApiSecret();
+        if (rawSecret == null || rawSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "LIVEKIT_API_SECRET is not set. Set LIVEKIT_API_SECRET (min 32 bytes) in .env or environment. "
+                            + "See .env.example and ProdEnvValidator.");
+        }
+        byte[] secretBytes = rawSecret.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < 32) {
+            throw new IllegalStateException(
+                    ("LIVEKIT_API_SECRET must be at least 32 bytes for HS256 (got %d). "
+                            + "Generate a secure random secret: openssl rand -base64 32. "
+                            + "Current value looks like placeholder/dev secret.")
+                            .formatted(secretBytes.length));
+        }
+        try {
+            this.secretKey = Keys.hmacShaKeyFor(secretBytes);
+        } catch (io.jsonwebtoken.security.WeakKeyException e) {
+            throw new IllegalStateException(
+                    "LIVEKIT_API_SECRET rejected by jjwt (WeakKeyException): " + e.getMessage()
+                            + ". Ensure secret is at least 32 random bytes and not a placeholder.", e);
+        }
         this.apiKey = properties.getLivekit().getApiKey();
         this.wsUrl = properties.getLivekit().getWsUrl();
         this.ttl = Duration.ofMinutes(properties.getLivekit().getTokenTtlMinutes());

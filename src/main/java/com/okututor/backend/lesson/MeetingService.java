@@ -39,20 +39,10 @@ public class MeetingService {
         // SELECT ... FOR UPDATE: параллельные запросы на один booking сериализуются,
         // гонка find-then-insert на meeting_sessions исключена на уровне БД
         Booking booking = requireParticipantBookingLocked(bookingId, requester);
-        if (booking.getStatus() != Booking.Status.CONFIRMED && booking.getStatus() != Booking.Status.COMPLETED) {
-            throw ApiException.conflict("Lesson is available after the tutor confirms the booking");
-        }
+        validateBookingState(booking);
+        validateTimeWindow(booking);
 
-        var window = properties.getLesson();
         Instant now = Instant.now();
-        Instant opensAt = booking.getStartAt().minusSeconds(window.getJoinMinutesBefore() * 60L);
-        Instant closesAt = booking.getEndAt().plusSeconds(window.getJoinMinutesAfter() * 60L);
-        if (now.isBefore(opensAt) || now.isAfter(closesAt)) {
-            throw ApiException.forbidden(com.okututor.backend.common.error.ErrorCodes.MEETING_NOT_AVAILABLE,
-                    "The lesson room is open from %s and until %s (UTC)"
-                            .formatted(opensAt, closesAt));
-        }
-
         MeetingSession session = findOrCreateSession(bookingId, now);
         // startedAt фиксируется при первом входе и не перезаписывается при повторах
         if (session.getStartedAt() == null) {
@@ -71,11 +61,40 @@ public class MeetingService {
     /** Вызывается PgLesson при выходе из урока; ошибки фронт глотает сам. */
     @Transactional
     public java.util.Map<String, String> end(User requester, UUID bookingId) {
-        requireParticipantBookingLocked(bookingId, requester);
-        MeetingSession session = findOrCreateSession(bookingId, Instant.now());
-        session.setEndedAt(Instant.now());
+        Booking booking = requireParticipantBookingLocked(bookingId, requester);
+        validateBookingState(booking);
+        // не создаём сессию если join не был выполнен — это логически некорректная сущность (startedAt=null)
+        MeetingSession session = meetingRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> ApiException.notFound(
+                        com.okututor.backend.common.error.ErrorCodes.NOT_FOUND,
+                        "No meeting session found for this booking - join the lesson first"));
+        if (session.getStartedAt() == null) {
+            throw ApiException.conflict(com.okututor.backend.common.error.ErrorCodes.MEETING_NOT_AVAILABLE,
+                    "Meeting was never started - cannot end a session that was not joined");
+        }
+        // идемпотентно: повторный end не меняет состояние кроме обновления endedAt если уже завершено
+        Instant now = Instant.now();
+        session.setEndedAt(now);
         meetingRepository.save(session);
         return java.util.Map.of("status", "ENDED");
+    }
+
+    private void validateBookingState(Booking booking) {
+        if (booking.getStatus() != Booking.Status.CONFIRMED && booking.getStatus() != Booking.Status.COMPLETED) {
+            throw ApiException.conflict("Lesson is available after the tutor confirms the booking");
+        }
+    }
+
+    private void validateTimeWindow(Booking booking) {
+        var window = properties.getLesson();
+        Instant now = Instant.now();
+        Instant opensAt = booking.getStartAt().minusSeconds(window.getJoinMinutesBefore() * 60L);
+        Instant closesAt = booking.getEndAt().plusSeconds(window.getJoinMinutesAfter() * 60L);
+        if (now.isBefore(opensAt) || now.isAfter(closesAt)) {
+            throw ApiException.forbidden(com.okututor.backend.common.error.ErrorCodes.MEETING_NOT_AVAILABLE,
+                    "The lesson room is open from %s and until %s (UTC)"
+                            .formatted(opensAt, closesAt));
+        }
     }
 
     /**

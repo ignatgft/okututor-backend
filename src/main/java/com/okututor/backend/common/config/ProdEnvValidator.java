@@ -63,8 +63,17 @@ public class ProdEnvValidator implements EnvironmentPostProcessor, Ordered {
             }
         }
 
-        if (environment.getProperty("LIVEKIT_API_KEY", "").isBlank()) {
+        String livekitKey = environment.getProperty("LIVEKIT_API_KEY", "");
+        String livekitSecret = environment.getProperty("LIVEKIT_API_SECRET", "");
+        if (livekitKey.isBlank() || livekitSecret.isBlank()) {
             log.warn("PROD: LIVEKIT_API_KEY/LIVEKIT_API_SECRET not set - lesson meetings will fail at runtime");
+        } else if (livekitSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
+            problems.add("LIVEKIT_API_SECRET must be at least 32 bytes in production (got %d)"
+                    .formatted(livekitSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length));
+        }
+        if (livekitKey.isBlank() && !livekitSecret.isBlank()
+                || !livekitKey.isBlank() && livekitSecret.isBlank()) {
+            problems.add("LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together in production");
         }
 
         if (!problems.isEmpty()) {
