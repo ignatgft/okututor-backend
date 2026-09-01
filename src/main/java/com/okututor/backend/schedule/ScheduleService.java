@@ -58,8 +58,17 @@ public class ScheduleService {
             String message,
             String location_type,
             String location_address,
-            String location_details
-    ) {}
+            String location_details,
+            Integer total_lessons,
+            Integer count
+    ) {
+        public ProposeRequest(String timezone, String format, String start_date, String end_date,
+                              Integer duration_minutes, List<SlotRequest> slots, String message,
+                              String location_type, String location_address, String location_details) {
+            this(timezone, format, start_date, end_date, duration_minutes, slots, message,
+                    location_type, location_address, location_details, null, null);
+        }
+    }
     public record SlotResponse(String weekday, String start_time, String end_time) {}
 
     public record ScheduleProposalResponse(
@@ -585,7 +594,8 @@ public class ScheduleService {
         List<Booking> bookings = new ArrayList<>();
         List<Lesson> lessons = new ArrayList<>();
         List<String> conflicted = new ArrayList<>();
-        List<Booking.Status> createdStatuses = new ArrayList<>();
+        java.util.Set<Instant> seenStarts = new java.util.HashSet<>();
+        int sequence = 1;
 
         LocalDate day = schedule.getStartDate();
         while (!day.isAfter(schedule.getEndDate())) {
@@ -604,7 +614,12 @@ public class ScheduleService {
                     conflicted.add(localDate + " (в прошлом)");
                     continue;
                 }
-                if (!covers(availabilityByWeekday.get(caption), slot.getStartTime(), duration)) {
+                // дубликат внутри батча (например, два одинаковых слота)
+                if (!seenStarts.add(startAt)) {
+                    conflicted.add(localDate + " (дубликат)");
+                    continue;
+                }
+                if (!coversZoneAware(availabilityByWeekday.get(caption), day, slot.getStartTime(), duration, zone)) {
                     conflicted.add(localDate + " (нет доступности)");
                     continue;
                 }
@@ -640,19 +655,20 @@ public class ScheduleService {
                 lesson.setStatus(Lesson.Status.SCHEDULED);
                 lesson.setSchedule(schedule);
                 lesson.setBooking(booking);
+                lesson.setSequenceNumber(sequence++);
                 lesson.setLocationType(schedule.getLocationType());
                 lesson.setLocationAddress(schedule.getLocationAddress());
                 lesson.setLocationDetails(schedule.getLocationDetails());
 
                 bookings.add(booking);
                 lessons.add(lesson);
-                createdStatuses.add(Booking.Status.CONFIRMED);
             }
             day = day.plusDays(1);
         }
 
         if (!bookings.isEmpty()) {
             List<Booking> savedBookings = bookingRepository.saveAll(bookings);
+            // проставляем sequence после сохранения (уже есть) и сохраняем lessons атомарно
             lessonRepository.saveAll(lessons);
             auditLogService.logSync(AuditEntry.of(app.getStudent() != null ? app.getStudent().getId() : null,
                     "LESSONS_GENERATED", "APPLICATION", app.getId())
@@ -758,9 +774,25 @@ private ScheduleResponse toScheduleResponse(Schedule s, UUID viewerId) {
         }
         ZoneId zone = ScheduleParser.parseZone(req.timezone());
         LocalDate startDate = ScheduleParser.parseDate(req.start_date());
-        LocalDate endDate = ScheduleParser.parseDate(req.end_date());
-        if (endDate.isBefore(startDate)) {
-            throw ApiException.validation(ErrorCodes.INVALID_DATE, "end_date must be on or after start_date");
+        // total_lessons/count mode: generate exactly N lessons instead of date-range
+        Integer targetCount = req.total_lessons() != null ? req.total_lessons() : req.count();
+        LocalDate endDate;
+        if (targetCount != null) {
+            if (targetCount < 1 || targetCount > 100) {
+                throw ApiException.validation(ErrorCodes.INVALID_TOTAL_LESSONS, "total_lessons must be between 1 and 100");
+            }
+            // weekdays from slots
+            java.util.Set<DayOfWeek> wdSet = new java.util.HashSet<>();
+            for (SlotRequest s : req.slots()) wdSet.add(parseWeekday(s.weekday()));
+            endDate = computeEndDateForWeekdays(startDate, targetCount, wdSet);
+        } else {
+            if (req.end_date() == null || req.end_date().isBlank()) {
+                throw ApiException.validation(ErrorCodes.INVALID_DATE, "end_date is required when total_lessons is not provided");
+            }
+            endDate = ScheduleParser.parseDate(req.end_date());
+            if (endDate.isBefore(startDate)) {
+                throw ApiException.validation(ErrorCodes.INVALID_DATE, "end_date must be on or after start_date");
+            }
         }
         if (startDate.isBefore(LocalDate.now())) {
             throw ApiException.validation(ErrorCodes.INVALID_DATE, "start_date must not be in the past");
@@ -833,6 +865,40 @@ private ScheduleResponse toScheduleResponse(Schedule s, UUID viewerId) {
             }
         }
         return false;
+    }
+
+    private static boolean coversZoneAware(List<AvailabilitySlot> slots, LocalDate day, LocalTime lessonStart, int duration, ZoneId lessonZone) {
+        if (slots == null || slots.isEmpty()) {
+            return false;
+        }
+        Instant lessonStartInstant = day.atTime(lessonStart).atZone(lessonZone).toInstant();
+        Instant lessonEndInstant = lessonStartInstant.plusSeconds(duration * 60L);
+        for (AvailabilitySlot slot : slots) {
+            ZoneId avZone = ScheduleParser.parseZone(slot.getTimezone());
+            Instant avStart = day.atTime(slot.getStartTime()).atZone(avZone).toInstant();
+            Instant avEnd = day.atTime(slot.getEndTime()).atZone(avZone).toInstant();
+            if (!avStart.isAfter(lessonStartInstant) && !avEnd.isBefore(lessonEndInstant)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LocalDate computeEndDateForWeekdays(LocalDate start, int count, java.util.Set<DayOfWeek> weekdays) {
+        LocalDate cursor = start;
+        int found = 0;
+        int guard = 0;
+        while (guard < 366) {
+            if (weekdays.contains(cursor.getDayOfWeek())) {
+                found++;
+                if (found == count) {
+                    return cursor;
+                }
+            }
+            cursor = cursor.plusDays(1);
+            guard++;
+        }
+        throw ApiException.validation("Unable to compute end_date for given weekdays and count");
     }
 
     private Schedule buildSchedule(Enrollment app, ParsedProposal parsed) {

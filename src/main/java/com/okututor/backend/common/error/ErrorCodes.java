@@ -32,6 +32,12 @@ public final class ErrorCodes {
     public static final String INVALID_DATE = "INVALID_DATE";
     public static final String NOT_APPLICATION_OWNER = "NOT_APPLICATION_OWNER";
     public static final String NOT_COURSE_OWNER = "NOT_COURSE_OWNER";
+    public static final String INVALID_SCHEDULE = "INVALID_SCHEDULE";
+    public static final String INVALID_TOTAL_LESSONS = "INVALID_TOTAL_LESSONS";
+    public static final String DUPLICATE_OCCURRENCE = "DUPLICATE_OCCURRENCE";
+    public static final String LESSON_GENERATION_FAILED = "LESSON_GENERATION_FAILED";
+    public static final String LESSON_NOT_FOUND = "LESSON_NOT_FOUND";
+    public static final String BOOKING_NOT_CONFIRMED = "BOOKING_NOT_CONFIRMED";
 
     private ErrorCodes() {
     }

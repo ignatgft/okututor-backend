@@ -372,20 +372,17 @@ public class EnrollmentService {
         }
 
         // 4b. Зеркалим в Lesson, чтобы GET /lessons и /calendar отдавали занятие обеим сторонам
-        try {
-            Lesson lesson = new Lesson();
-            lesson.setCourse(enrollment.getCourse());
-            lesson.setTeacher(teacher);
-            lesson.setStudent(enrollment.getStudent());
-            lesson.setBooking(booking);
-            lesson.setStartAt(startAt);
-            lesson.setEndAt(endAt);
-            lesson.setStatus(Lesson.Status.SCHEDULED);
-            lesson.setTitle(enrollment.getCourse() != null ? enrollment.getCourse().getTitle() : "Tutoring session");
-            lessonRepository.save(lesson);
-        } catch (Exception ignored) {
-            // best-effort: бронь уже создана, урок-зеркало не должен откатывать транзакцию
-        }
+        Lesson lesson = new Lesson();
+        lesson.setCourse(enrollment.getCourse());
+        lesson.setTeacher(teacher);
+        lesson.setStudent(enrollment.getStudent());
+        lesson.setBooking(booking);
+        lesson.setStartAt(startAt);
+        lesson.setEndAt(endAt);
+        lesson.setStatus(Lesson.Status.SCHEDULED);
+        lesson.setSequenceNumber(1);
+        lesson.setTitle(enrollment.getCourse() != null ? enrollment.getCourse().getTitle() : "Tutoring session");
+        lessonRepository.save(lesson);
 
         // 5. Прямой чат студент↔тьютор, чтобы фронт сразу открыл его
         ensureConversation(enrollment);
@@ -460,9 +457,15 @@ public class EnrollmentService {
         DateTimeFormatter dateF = DateTimeFormatter.ISO_LOCAL_DATE;
         UUID studentId = enrollment.getStudent() != null ? enrollment.getStudent().getId() : null;
         UUID teacherId = teacher != null ? teacher.getId() : null;
+        java.util.Set<Instant> seenStarts = new java.util.HashSet<>();
+        int sequence = 1;
 
         LocalDate current = startDate;
-        while (!current.isAfter(endDate)) {
+        // если передан count (total_lessons), генерируем ровно count занятий, даже если endDate ограничен
+        Integer targetCount = req.count();
+        int guard = 0;
+        while (!current.isAfter(endDate) && guard < 366) {
+            if (targetCount != null && created.size() >= targetCount) break;
             String weekdayKey = current.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
             if (weekdays.contains(current.getDayOfWeek()) && weekdayKey != null) {
                 String localDate = dateF.format(current);
@@ -472,6 +475,14 @@ public class EnrollmentService {
                 } catch (DateTimeException e) {
                     conflicted.add(localDate);
                     current = current.plusDays(1);
+                    guard++;
+                    continue;
+                }
+                // дубликат внутри батча
+                if (!seenStarts.add(startAt)) {
+                    conflicted.add(localDate + " (дубликат)");
+                    current = current.plusDays(1);
+                    guard++;
                     continue;
                 }
                 Instant endAt = startAt.plusSeconds(duration * 60L);
@@ -483,11 +494,12 @@ public class EnrollmentService {
                         && bookingRepository.overlapsStudent(studentId, active, startAt, endAt);
 
                 if (!startAt.isAfter(Instant.now())
-                        || !covers(slotsByWeekday.get(weekdayKey), time, duration)
+                        || !coversZoneAware(slotsByWeekday.get(weekdayKey), current, time, duration, zone)
                         || teacherBusy
                         || studentBusy) {
                     conflicted.add(localDate);
                     current = current.plusDays(1);
+                    guard++;
                     continue;
                 }
 
@@ -503,14 +515,61 @@ public class EnrollmentService {
                 created.add(booking);
             }
             current = current.plusDays(1);
+            guard++;
+        }
+        // если count задан и мы не набрали нужное количество, продолжаем за пределами endDate до 366 дней
+        while (targetCount != null && created.size() < targetCount && guard < 366) {
+            String weekdayKey = current.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+            if (weekdays.contains(current.getDayOfWeek())) {
+                String localDate = dateF.format(current);
+                Instant startAt;
+                try {
+                    startAt = current.atTime(time).atZone(zone).toInstant();
+                } catch (DateTimeException e) {
+                    conflicted.add(localDate);
+                    current = current.plusDays(1);
+                    guard++;
+                    continue;
+                }
+                if (!seenStarts.add(startAt)) {
+                    current = current.plusDays(1);
+                    guard++;
+                    continue;
+                }
+                Instant endAt = startAt.plusSeconds(duration * 60L);
+                boolean teacherBusy = teacherId != null
+                        && bookingRepository.overlapsTeacher(teacherId, active, startAt, endAt);
+                boolean studentBusy = studentId != null
+                        && bookingRepository.overlapsStudent(studentId, active, startAt, endAt);
+                if (!startAt.isAfter(Instant.now())
+                        || !coversZoneAware(slotsByWeekday.get(weekdayKey), current, time, duration, zone)
+                        || teacherBusy
+                        || studentBusy) {
+                    conflicted.add(localDate);
+                } else {
+                    Booking booking = new Booking();
+                    booking.setCourse(enrollment.getCourse());
+                    booking.setStudent(enrollment.getStudent());
+                    booking.setTeacher(teacher);
+                    booking.setStartAt(startAt);
+                    booking.setEndAt(endAt);
+                    booking.setDurationMinutes(duration);
+                    booking.setStatus(Booking.Status.CONFIRMED);
+                    booking.setEnrollment(enrollment);
+                    created.add(booking);
+                }
+            }
+            current = current.plusDays(1);
+            guard++;
         }
 
         // единая атомарная вставка (уникальные индексы teacher/student + start_at защищают от гонок на commit)
         List<Booking> saved = bookingRepository.saveAll(created);
 
-        // зеркалим уроки для календаря/GET lessons
+        // зеркалим уроки для календаря/GET lessons — атомарно в той же транзакции, без скрытия ошибок
         if (!saved.isEmpty()) {
             List<Lesson> lessons = new java.util.ArrayList<>();
+            int seq = 1;
             for (Booking b : saved) {
                 Lesson lesson = new Lesson();
                 lesson.setCourse(enrollment.getCourse());
@@ -520,13 +579,11 @@ public class EnrollmentService {
                 lesson.setStartAt(b.getStartAt());
                 lesson.setEndAt(b.getEndAt());
                 lesson.setStatus(Lesson.Status.SCHEDULED);
+                lesson.setSequenceNumber(seq++);
                 lesson.setTitle(enrollment.getCourse() != null ? enrollment.getCourse().getTitle() : "Tutoring session");
                 lessons.add(lesson);
             }
-            try {
-                lessonRepository.saveAll(lessons);
-            } catch (Exception ignored) {
-            }
+            lessonRepository.saveAll(lessons);
         }
 
         ensureConversation(enrollment);
@@ -578,6 +635,23 @@ public class EnrollmentService {
         LocalTime end = start.plusMinutes(duration);
         for (AvailabilitySlot slot : slots) {
             if (!slot.getStartTime().isAfter(start) && !slot.getEndTime().isBefore(end)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean coversZoneAware(List<AvailabilitySlot> slots, LocalDate day, LocalTime lessonStart, int duration, ZoneId lessonZone) {
+        if (slots == null || slots.isEmpty()) {
+            return false;
+        }
+        Instant lessonStartInstant = day.atTime(lessonStart).atZone(lessonZone).toInstant();
+        Instant lessonEndInstant = lessonStartInstant.plusSeconds(duration * 60L);
+        for (AvailabilitySlot slot : slots) {
+            ZoneId avZone = com.okututor.backend.booking.ScheduleParser.parseZone(slot.getTimezone());
+            Instant avStart = day.atTime(slot.getStartTime()).atZone(avZone).toInstant();
+            Instant avEnd = day.atTime(slot.getEndTime()).atZone(avZone).toInstant();
+            if (!avStart.isAfter(lessonStartInstant) && !avEnd.isBefore(lessonEndInstant)) {
                 return true;
             }
         }

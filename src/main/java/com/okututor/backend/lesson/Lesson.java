@@ -73,6 +73,9 @@ public class Lesson {
     @Column(name = "location_details", columnDefinition = "text")
     private String locationDetails;
 
+    @Column(name = "sequence_number")
+    private Integer sequenceNumber;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cancelled_by")
     private User cancelledBy;
@@ -147,6 +150,9 @@ public class Lesson {
     public void setLocationAddress(String locationAddress) { this.locationAddress = locationAddress; }
     public String getLocationDetails() { return locationDetails; }
     public void setLocationDetails(String locationDetails) { this.locationDetails = locationDetails; }
+    public Integer getSequenceNumber() { return sequenceNumber; }
+    public void setSequenceNumber(Integer sequenceNumber) { this.sequenceNumber = sequenceNumber; }
+
     public User getCancelledBy() { return cancelledBy; }
     public void setCancelledBy(User cancelledBy) { this.cancelledBy = cancelledBy; }
     public String getCancelReason() { return cancelReason; }
