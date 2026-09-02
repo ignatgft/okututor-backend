@@ -108,4 +108,66 @@ public interface LessonRepository extends JpaRepository<Lesson, UUID> {
     java.util.List<Lesson> findUpcomingForReminder(@Param("status") Lesson.Status status,
                                                    @Param("from") java.time.Instant from,
                                                    @Param("to") java.time.Instant to);
+
+    // ---------- ScheduleMe API (all lessons involving user, irrespective of booking) ----------
+
+    @Query("""
+            select l from Lesson l
+            join fetch l.teacher t
+            join fetch l.student s
+            left join fetch l.course c
+            left join fetch l.schedule
+            left join fetch l.booking
+            where (l.teacher.id = :userId or l.student.id = :userId)
+              and l.startAt >= :from and l.startAt < :to
+            order by l.startAt asc
+            """)
+    List<Lesson> findForUserBetween(@Param("userId") UUID userId,
+                                    @Param("from") java.time.Instant from,
+                                    @Param("to") java.time.Instant to);
+
+    @Query("""
+            select l from Lesson l
+            join fetch l.teacher t
+            join fetch l.student s
+            left join fetch l.course c
+            left join fetch l.schedule
+            left join fetch l.booking
+            where (l.teacher.id = :userId or l.student.id = :userId)
+              and l.status in :statuses
+              and l.startAt >= :from
+            order by l.startAt asc
+            """)
+    List<Lesson> findUpcomingForUser(@Param("userId") UUID userId,
+                                     @Param("statuses") java.util.Collection<Lesson.Status> statuses,
+                                     @Param("from") java.time.Instant from,
+                                     org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
+            select l from Lesson l
+            join fetch l.teacher t
+            join fetch l.student s
+            left join fetch l.course c
+            left join fetch l.schedule
+            left join fetch l.booking
+            where (l.teacher.id = :userId or l.student.id = :userId)
+              and l.startAt >= :now
+              and l.status in :statuses
+            order by l.startAt asc
+            """)
+    List<Lesson> findNextCandidates(@Param("userId") UUID userId,
+                                    @Param("statuses") java.util.Collection<Lesson.Status> statuses,
+                                    @Param("now") java.time.Instant now,
+                                    org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
+            select l from Lesson l
+            join fetch l.teacher t
+            join fetch l.student s
+            left join fetch l.course c
+            left join fetch l.schedule
+            left join fetch l.booking
+            where l.id = :id
+            """)
+    java.util.Optional<Lesson> findByIdWithParticipants(@Param("id") UUID id);
 }

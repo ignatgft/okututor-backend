@@ -215,10 +215,16 @@ public class AppProperties {
     public static class Lesson {
         private int joinMinutesBefore = 15;
         private int joinMinutesAfter = 60;
+        private int cancelHoursBefore = 8;
+        private int rescheduleHoursBefore = 8;
         public int getJoinMinutesBefore() { return joinMinutesBefore; }
         public void setJoinMinutesBefore(int v) { this.joinMinutesBefore = v; }
         public int getJoinMinutesAfter() { return joinMinutesAfter; }
         public void setJoinMinutesAfter(int v) { this.joinMinutesAfter = v; }
+        public int getCancelHoursBefore() { return cancelHoursBefore; }
+        public void setCancelHoursBefore(int v) { this.cancelHoursBefore = v; }
+        public int getRescheduleHoursBefore() { return rescheduleHoursBefore; }
+        public void setRescheduleHoursBefore(int v) { this.rescheduleHoursBefore = v; }
     }
 
     public static class R2 {

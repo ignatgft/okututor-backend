@@ -157,6 +157,8 @@ app:
     # окно входа в видеоурок относительно расписания (UTC)
     join-minutes-before: ${LESSON_JOIN_MINUTES_BEFORE:15}
     join-minutes-after: ${LESSON_JOIN_MINUTES_AFTER:60}
+    cancel-hours-before: ${LESSON_CANCEL_HOURS_BEFORE:8}
+    reschedule-hours-before: ${LESSON_RESCHEDULE_HOURS_BEFORE:8}
 
 logging:
   level:
