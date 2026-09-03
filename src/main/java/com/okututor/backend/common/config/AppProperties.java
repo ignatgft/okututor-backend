@@ -217,6 +217,7 @@ public class AppProperties {
         private int joinMinutesAfter = 60;
         private int cancelHoursBefore = 8;
         private int rescheduleHoursBefore = 8;
+        private int noShowWaitMinutes = 15;
         public int getJoinMinutesBefore() { return joinMinutesBefore; }
         public void setJoinMinutesBefore(int v) { this.joinMinutesBefore = v; }
         public int getJoinMinutesAfter() { return joinMinutesAfter; }
@@ -225,6 +226,8 @@ public class AppProperties {
         public void setCancelHoursBefore(int v) { this.cancelHoursBefore = v; }
         public int getRescheduleHoursBefore() { return rescheduleHoursBefore; }
         public void setRescheduleHoursBefore(int v) { this.rescheduleHoursBefore = v; }
+        public int getNoShowWaitMinutes() { return noShowWaitMinutes; }
+        public void setNoShowWaitMinutes(int v) { this.noShowWaitMinutes = v; }
     }
 
     public static class R2 {

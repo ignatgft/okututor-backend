@@ -19,6 +19,8 @@ public class WebConfig {
                         .allowedOrigins(properties.getCors().getAllowedOrigins().toArray(String[]::new))
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("Authorization", "Content-Type", "Accept", "X-Time-Zone")
+                        .exposedHeaders("Authorization")
+                        .allowCredentials(true)
                         .maxAge(3600);
             }
         };

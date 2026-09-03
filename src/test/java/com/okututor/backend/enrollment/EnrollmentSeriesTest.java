@@ -144,7 +144,7 @@ class EnrollmentSeriesTest {
         String w1 = start.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
         String w2 = start.plusDays(1).getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
 
-        // stub only w2, so w1 (start date) conflicts
+        // stub only w2, but availability is no longer checked (tutor appoints) - so both days succeed
         stubAvailabilityForDays(List.of(w2), LocalTime.of(10, 0), LocalTime.of(15, 0));
 
         var req = new EnrollmentService.AcceptAndScheduleRequest(
@@ -158,7 +158,7 @@ class EnrollmentSeriesTest {
         var res = service.acceptAndSchedule(teacher, enrollmentId, req);
 
         assertThat(res.created_count()).isPositive();
-        assertThat(res.conflicted_dates()).contains(start.toString());
+        assertThat(res.conflicted_dates()).isEmpty();
     }
 
     @Test

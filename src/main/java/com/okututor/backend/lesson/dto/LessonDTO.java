@@ -35,8 +35,52 @@ public record LessonDTO(
         boolean canReschedule,
         boolean canReview,
 
+        // расширенные permissions
+        boolean canStart,
+        boolean canComplete,
+        boolean canMarkStudentNoShow,
+        boolean canMarkTutorNoShow,
+        boolean canReportIssue,
+
         String cancelledBy, // STUDENT | TUTOR | SYSTEM
         String cancelReason,
+
+        // жизненный цикл
+        Instant actualStart,
+        Instant actualEnd,
+        Integer durationMinutes,
+        UUID startedBy,
+        UUID completedBy,
+
+        // офлайн
+        String locationType,
+        String locationAddress,
+        String locationDetails,
+
+        // после завершения
+        String topic,
+        String notes,
+        String homework,
+        String materials,
+        String links,
+        String attendance,
+
+        // pending предложения
+        Instant pendingStartAt,
+        Instant pendingEndAt,
+        String pendingReason,
+        String pendingFormat,
+        String pendingLocationType,
+        String pendingLocationAddress,
+        String pendingLocationDetails,
+        Integer pendingDurationMinutes,
+        String pendingScope,
+        UUID pendingProposedBy,
+        Instant pendingProposedAt,
+
+        Integer sequenceNumber,
+        UUID scheduleId,
+        UUID bookingId,
 
         Instant createdAt,
         Instant updatedAt

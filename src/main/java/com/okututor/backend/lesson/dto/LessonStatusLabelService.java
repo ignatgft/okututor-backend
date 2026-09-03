@@ -26,7 +26,14 @@ public class LessonStatusLabelService {
                     Map.entry("RESCHEDULED", "Перенесено"),
                     Map.entry("REJECTED", "Отклонено"),
                     Map.entry("NO_SHOW", "Не явился"),
-                    Map.entry("PROPOSED", "Предложено")
+                    Map.entry("PROPOSED", "Предложено"),
+                    Map.entry("RESCHEDULE_PENDING", "Ожидает переноса"),
+                    Map.entry("FORMAT_CHANGE_PENDING", "Ожидает смены формата"),
+                    Map.entry("LOCATION_CHANGE_PENDING", "Ожидает смены места"),
+                    Map.entry("DURATION_CHANGE_PENDING", "Ожидает смены длительности"),
+                    Map.entry("STUDENT_NO_SHOW", "Ученик не пришёл"),
+                    Map.entry("TUTOR_NO_SHOW", "Тьютор не пришёл"),
+                    Map.entry("ISSUE", "Проблема")
             ),
             "en", Map.ofEntries(
                     Map.entry("SCHEDULED", "Confirmed"),
@@ -39,7 +46,14 @@ public class LessonStatusLabelService {
                     Map.entry("RESCHEDULED", "Rescheduled"),
                     Map.entry("REJECTED", "Rejected"),
                     Map.entry("NO_SHOW", "No show"),
-                    Map.entry("PROPOSED", "Proposed")
+                    Map.entry("PROPOSED", "Proposed"),
+                    Map.entry("RESCHEDULE_PENDING", "Reschedule pending"),
+                    Map.entry("FORMAT_CHANGE_PENDING", "Format change pending"),
+                    Map.entry("LOCATION_CHANGE_PENDING", "Location change pending"),
+                    Map.entry("DURATION_CHANGE_PENDING", "Duration change pending"),
+                    Map.entry("STUDENT_NO_SHOW", "Student no-show"),
+                    Map.entry("TUTOR_NO_SHOW", "Tutor no-show"),
+                    Map.entry("ISSUE", "Issue")
             ),
             "ky", Map.ofEntries(
                     Map.entry("SCHEDULED", "Тастыкталды"),
@@ -52,7 +66,14 @@ public class LessonStatusLabelService {
                     Map.entry("RESCHEDULED", "Жылдырылды"),
                     Map.entry("REJECTED", "Четке кагылды"),
                     Map.entry("NO_SHOW", "Келген жок"),
-                    Map.entry("PROPOSED", "Сунушталды")
+                    Map.entry("PROPOSED", "Сунушталды"),
+                    Map.entry("RESCHEDULE_PENDING", "Жылдыруу күтүүдө"),
+                    Map.entry("FORMAT_CHANGE_PENDING", "Формат алмашуу күтүүдө"),
+                    Map.entry("LOCATION_CHANGE_PENDING", "Жай алмашуу күтүүдө"),
+                    Map.entry("DURATION_CHANGE_PENDING", "Узактык алмашуу күтүүдө"),
+                    Map.entry("STUDENT_NO_SHOW", "Окуучу келген жок"),
+                    Map.entry("TUTOR_NO_SHOW", "Мугалим келген жок"),
+                    Map.entry("ISSUE", "Көйгөй")
             )
     );
 

@@ -2,6 +2,8 @@ package com.okututor.backend.schedule;
 
 import com.okututor.backend.common.error.ApiException;
 import com.okututor.backend.lesson.LessonService;
+import com.okututor.backend.schedule.dto.CheckAvailabilityRequest;
+import com.okututor.backend.schedule.dto.CheckAvailabilityResponse;
 import com.okututor.backend.security.UserPrincipal;
 import com.okututor.backend.user.UserService;
 import java.util.List;
@@ -77,6 +79,12 @@ public class ScheduleController {
                                                             @PathVariable UUID id,
                                                             @RequestBody ScheduleService.ProposeRequest request) {
         return scheduleService.counter(currentUser(principal), id, request);
+    }
+
+    @PostMapping("/api/v1/schedule/check-availability")
+    public CheckAvailabilityResponse checkAvailability(@AuthenticationPrincipal UserPrincipal principal,
+                                                      @RequestBody CheckAvailabilityRequest request) {
+        return scheduleService.checkAvailability(currentUser(principal), request);
     }
 
     private com.okututor.backend.user.User currentUser(UserPrincipal principal) {

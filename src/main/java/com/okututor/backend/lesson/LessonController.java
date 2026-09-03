@@ -100,16 +100,74 @@ public class LessonController {
         return Map.of("id", lesson.getId().toString(), "status", lesson.getStatus().name());
     }
 
-    @PostMapping("/api/v1/lessons/{id}/start")
-    public ResponseEntity<Void> start(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id) {
-        lessonService.start(currentUser(principal), id);
-        return ResponseEntity.ok().build();
+    @PostMapping({"/api/v1/lessons/{id}/start", "/lessons/{id}/start"})
+    public LessonDTO start(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                           @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson lesson = lessonService.requireParticipantView(id, actor);
+        if (!permissionEvaluator.canStart(lesson, actor.getId(), Instant.now()) && !isAdmin(actor)) {
+            throw ApiException.forbidden("Cannot start this lesson");
+        }
+        lessonService.start(actor, id);
+        Lesson updated = lessonService.requireById(id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
     }
 
-    @PostMapping("/api/v1/lessons/{id}/complete")
-    public ResponseEntity<Void> complete(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id) {
-        lessonService.complete(currentUser(principal), id);
-        return ResponseEntity.ok().build();
+    @PostMapping({"/api/v1/lessons/{id}/complete", "/lessons/{id}/complete"})
+    public LessonDTO complete(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                              @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson lesson = lessonService.requireParticipantView(id, actor);
+        if (!permissionEvaluator.canComplete(lesson, actor.getId(), Instant.now()) && !isAdmin(actor)) {
+            throw ApiException.forbidden("Cannot complete this lesson");
+        }
+        lessonService.complete(actor, id);
+        Lesson updated = lessonService.requireById(id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    @PostMapping({"/api/v1/lessons/{id}/student-no-show", "/lessons/{id}/student-no-show"})
+    public LessonDTO studentNoShow(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                   @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson lesson = lessonService.requireParticipantView(id, actor);
+        if (!permissionEvaluator.canMarkStudentNoShow(lesson, actor.getId(), Instant.now()) && !isAdmin(actor)) {
+            throw ApiException.forbidden("Cannot mark student no-show yet. Wait 15 minutes after start.");
+        }
+        Lesson updated = lessonService.markStudentNoShow(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    @PostMapping({"/api/v1/lessons/{id}/tutor-no-show", "/lessons/{id}/tutor-no-show"})
+    public LessonDTO tutorNoShow(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                 @RequestBody(required = false) Map<String,Object> payload,
+                                 @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson lesson = lessonService.requireParticipantView(id, actor);
+        if (!permissionEvaluator.canMarkTutorNoShow(lesson, actor.getId(), Instant.now()) && !isAdmin(actor)) {
+            throw ApiException.forbidden("Cannot mark tutor no-show yet. Wait 15 minutes after start.");
+        }
+        String reason = payload!=null ? (payload.get("reason")!=null? payload.get("reason").toString(): (payload.get("message")!=null?payload.get("message").toString():null)) : null;
+        Lesson updated = lessonService.markTutorNoShow(actor, id, reason);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    @PostMapping({"/api/v1/lessons/{id}/issue", "/lessons/{id}/issue"})
+    public LessonDTO issue(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                           @RequestBody(required = false) Map<String,Object> payload,
+                           @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        if (!permissionEvaluator.canReportIssue(lessonService.requireParticipantView(id, actor), actor.getId()) && !isAdmin(actor)) {
+            throw ApiException.forbidden("Cannot report issue");
+        }
+        String reason = payload!=null ? (payload.get("reason")!=null? payload.get("reason").toString(): (payload.get("message")!=null?payload.get("message").toString(): (payload.get("comment")!=null?payload.get("comment").toString():null))) : null;
+        Lesson updated = lessonService.reportIssue(actor, id, reason);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
     }
 
     /** отмена занятия с причиной (spec §9): {message} → bookreason; зеркалит статус брони.
@@ -258,6 +316,170 @@ public class LessonController {
         } else {
             return reviewService.create(actor, lesson.getCourse().getId(), rating, comment);
         }
+    }
+
+    // ===== RESCHEDULE PROPOSE FLOW (pending, требует подтверждения ученика) =====
+    @PostMapping({"/api/v1/lessons/{id}/reschedule/propose", "/lessons/{id}/reschedule/propose"})
+    public LessonDTO proposeReschedule(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                       @RequestBody(required = false) Map<String,Object> payload,
+                                       @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Instant start = extractInstant(payload, "newStartAt", "new_start_at", "startAt", "start_at", "start", "pendingStartAt");
+        Instant end = extractInstant(payload, "newEndAt", "new_end_at", "endAt", "end_at", "end", "pendingEndAt");
+        String tz = payload!=null && payload.get("timezone")!=null ? payload.get("timezone").toString() : null;
+        if (start==null && payload!=null && payload.get("date")!=null && payload.get("time")!=null) {
+            try {
+                start = com.okututor.backend.booking.ScheduleParser.combine(payload.get("date").toString(), payload.get("time").toString(), tz);
+                if (payload.get("duration_minutes")!=null) {
+                    int dur=Integer.parseInt(payload.get("duration_minutes").toString());
+                    end = start.plusSeconds(dur*60L);
+                } else if (payload.get("durationMinutes")!=null) {
+                    int dur=Integer.parseInt(payload.get("durationMinutes").toString());
+                    end = start.plusSeconds(dur*60L);
+                } else if (end==null) end = start.plusSeconds(3600);
+            } catch(Exception e){ throw new FieldValidationException(Map.of("startAt", e.getMessage())); }
+        }
+        String reason = payload!=null && payload.get("reason")!=null ? payload.get("reason").toString() : (payload!=null && payload.get("comment")!=null ? payload.get("comment").toString(): (payload!=null && payload.get("pendingReason")!=null?payload.get("pendingReason").toString():null));
+        String scope = payload!=null && payload.get("scope")!=null ? payload.get("scope").toString() : (payload!=null && payload.get("pendingScope")!=null?payload.get("pendingScope").toString():"SINGLE");
+        if (start==null) throw new FieldValidationException(Map.of("newStartAt","newStartAt is required (ISO-8601 UTC or date+time)"));
+        Lesson updated = lessonService.proposeReschedule(actor, id, start, end, reason, scope);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/reschedule/accept", "/lessons/{id}/reschedule/accept"})
+    public LessonDTO acceptReschedule(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                      @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.acceptReschedule(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/reschedule/reject", "/lessons/{id}/reschedule/reject"})
+    public LessonDTO rejectReschedule(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                      @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.rejectReschedule(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    // ===== FORMAT CHANGE =====
+    @PostMapping({"/api/v1/lessons/{id}/format/propose", "/lessons/{id}/format/propose"})
+    public LessonDTO proposeFormat(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                   @RequestBody(required = false) Map<String,Object> payload,
+                                   @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        String format = payload!=null && payload.get("format")!=null ? payload.get("format").toString() : null;
+        String scope = payload!=null && payload.get("scope")!=null ? payload.get("scope").toString(): "SINGLE";
+        LocationType lt = locationType(payload!=null?payload.get("location_type"):null);
+        if (lt==null && payload!=null && payload.get("locationType")!=null) lt = locationType(payload.get("locationType"));
+        String addr = payload!=null ? str(payload.get("location_address")!=null?payload.get("location_address"):payload.get("address")) : null;
+        String det = payload!=null ? str(payload.get("location_details")!=null?payload.get("location_details"):payload.get("locationDetails")) : null;
+        if (det==null && payload!=null) det = str(payload.get("location_comment"));
+        Lesson updated = lessonService.proposeFormatChange(actor, id, format, lt, addr, det, scope);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/format/accept", "/lessons/{id}/format/accept"})
+    public LessonDTO acceptFormat(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                  @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.acceptFormatChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/format/reject", "/lessons/{id}/format/reject"})
+    public LessonDTO rejectFormat(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                  @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.rejectFormatChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    // ===== LOCATION CHANGE =====
+    @PostMapping({"/api/v1/lessons/{id}/location/propose", "/lessons/{id}/location/propose"})
+    public LessonDTO proposeLocation(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                     @RequestBody(required = false) Map<String,Object> payload,
+                                     @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        String scope = payload!=null && payload.get("scope")!=null ? payload.get("scope").toString(): "SINGLE";
+        LocationType lt = locationType(payload!=null?payload.get("location_type"):null);
+        if (lt==null && payload!=null && payload.get("locationType")!=null) lt = locationType(payload.get("locationType"));
+        String addr = payload!=null ? str(payload.get("location_address")!=null?payload.get("location_address"):payload.get("address")) : null;
+        String det = payload!=null ? str(payload.get("location_details")!=null?payload.get("location_details"): (payload.get("locationDetails")!=null?payload.get("locationDetails"):payload.get("location_comment"))) : null;
+        Lesson updated = lessonService.proposeLocationChange(actor, id, lt, addr, det, scope);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/location/accept", "/lessons/{id}/location/accept"})
+    public LessonDTO acceptLocation(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                    @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.acceptLocationChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/location/reject", "/lessons/{id}/location/reject"})
+    public LessonDTO rejectLocation(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                    @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.rejectLocationChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    // ===== DURATION CHANGE =====
+    @PostMapping({"/api/v1/lessons/{id}/duration/propose", "/lessons/{id}/duration/propose"})
+    public LessonDTO proposeDuration(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                     @RequestBody(required = false) Map<String,Object> payload,
+                                     @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        String scope = payload!=null && payload.get("scope")!=null ? payload.get("scope").toString(): "SINGLE";
+        Integer dur = null;
+        if (payload!=null) {
+            Object v = payload.get("duration_minutes");
+            if (v==null) v = payload.get("durationMinutes");
+            if (v==null) v = payload.get("duration");
+            if (v!=null) try { dur = Integer.parseInt(v.toString()); } catch(Exception e){ dur=null; }
+        }
+        if (dur==null) throw new FieldValidationException(Map.of("duration_minutes","duration_minutes is required (30,45,60,90,120)"));
+        Lesson updated = lessonService.proposeDurationChange(actor, id, dur, scope);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/duration/accept", "/lessons/{id}/duration/accept"})
+    public LessonDTO acceptDuration(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                    @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.acceptDurationChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+    @PostMapping({"/api/v1/lessons/{id}/duration/reject", "/lessons/{id}/duration/reject"})
+    public LessonDTO rejectDuration(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                    @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        Lesson updated = lessonService.rejectDurationChange(actor, id);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
+    }
+
+    // ===== POST-COMPLETION DETAILS =====
+    @PostMapping({"/api/v1/lessons/{id}/details", "/lessons/{id}/details"})
+    public LessonDTO updateDetails(@AuthenticationPrincipal UserPrincipal principal, @PathVariable UUID id,
+                                   @RequestBody(required = false) Map<String,Object> payload,
+                                   @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        User actor = currentUser(principal);
+        String topic = payload!=null ? str(payload.get("topic")) : null;
+        String notes = payload!=null ? str(payload.get("notes")) : null;
+        String hw = payload!=null ? str(payload.get("homework")!=null?payload.get("homework"):payload.get("home_work")) : null;
+        String mats = payload!=null ? str(payload.get("materials")) : null;
+        String links = payload!=null ? str(payload.get("links")) : null;
+        var req = new LessonService.DetailsUpdateRequest(topic, notes, hw, mats, links);
+        Lesson updated = lessonService.updateDetails(actor, id, req);
+        Locale locale = labelService.parseAcceptLanguage(acceptLanguage);
+        return lessonMapper.toDTO(updated, actor.getId(), locale, Instant.now());
     }
 
     /** Детальный DTO для фронта Schedule (LessonDTO с permissions) */

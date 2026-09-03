@@ -163,25 +163,56 @@ public class ScheduleService {
     public ScheduleProposalResponse propose(User tutor, UUID applicationId, ProposeRequest req) {
         Enrollment app = requireApplication(applicationId);
         requireCourseTutor(app, tutor.getId());
+        // Разрешаем PENDING/NEEDS_INFO — сразу переводим в ACCEPTED (тьютор сам назначает)
+        if (app.getStatus() == Enrollment.Status.PENDING || app.getStatus() == Enrollment.Status.NEEDS_INFO) {
+            try {
+                app.transitionTo(Enrollment.Status.ACCEPTED);
+                enrollmentRepository.save(app);
+            } catch (ApiException e) {
+                if (!Enrollment.ACTIVE_STATUSES.contains(app.getStatus())) throw e;
+            }
+        }
         if (app.getStatus() != Enrollment.Status.ACCEPTED
                 && app.getStatus() != Enrollment.Status.SCHEDULE_PENDING
-                && app.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED) {
+                && app.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED
+                && app.getStatus() != Enrollment.Status.SCHEDULED) {
             throw ApiException.conflict(ErrorCodes.INVALID_APPLICATION_STATE,
                     "A schedule can only be proposed for an accepted application");
         }
-        if (proposalRepository.existsByApplicationIdAndStatus(applicationId, ScheduleProposal.Status.PENDING)) {
-            throw ApiException.conflict(ErrorCodes.SCHEDULE_NOT_AVAILABLE,
-                    "There is already a pending schedule proposal for this application");
-        }
+        // Если уже есть pending — обновляем его вместо ошибки (идемпотентно для повторных кликов на шаге 8)
+        List<ScheduleProposal> pendingList = proposalRepository.findByApplicationIdAndStatus(applicationId, ScheduleProposal.Status.PENDING);
+        ScheduleProposal existingPending = pendingList.isEmpty() ? null : pendingList.get(0);
         ParsedProposal parsed = parse(req);
 
-        Schedule schedule = scheduleRepository.findByApplicationId(applicationId).orElse(null);
-        if (schedule == null) {
-            schedule = new Schedule();
-            schedule.setApplication(app);
-            schedule.setCourse(app.getCourse());
-            schedule.setStudent(app.getStudent());
-            schedule.setTutor(app.getTutor() != null ? app.getTutor() : tutorOf(app));
+        Schedule schedule;
+        ScheduleProposal proposal;
+        if (existingPending != null) {
+            schedule = existingPending.getSchedule();
+            if (schedule == null) {
+                schedule = scheduleRepository.findByApplicationId(applicationId).orElse(null);
+            }
+            if (schedule == null) {
+                schedule = new Schedule();
+                schedule.setApplication(app);
+                schedule.setCourse(app.getCourse());
+                schedule.setStudent(app.getStudent());
+                schedule.setTutor(app.getTutor() != null ? app.getTutor() : tutorOf(app));
+            }
+            proposal = existingPending;
+            proposal.getSlots().clear();
+        } else {
+            schedule = scheduleRepository.findByApplicationId(applicationId).orElse(null);
+            if (schedule == null) {
+                schedule = new Schedule();
+                schedule.setApplication(app);
+                schedule.setCourse(app.getCourse());
+                schedule.setStudent(app.getStudent());
+                schedule.setTutor(app.getTutor() != null ? app.getTutor() : tutorOf(app));
+            }
+            proposal = new ScheduleProposal();
+            proposal.setApplication(app);
+            proposal.setSchedule(schedule);
+            proposal.setCreatedBy(tutor);
         }
         schedule.setStatus(Schedule.Status.PROPOSED);
         schedule.setTimezone(parsed.zone().getId());
@@ -203,16 +234,13 @@ public class ScheduleService {
         }
         scheduleRepository.save(schedule);
 
-        ScheduleProposal proposal = new ScheduleProposal();
-        proposal.setApplication(app);
-        proposal.setSchedule(schedule);
-        proposal.setCreatedBy(tutor);
         proposal.setStatus(ScheduleProposal.Status.PENDING);
         proposal.setTimezone(parsed.zone().getId());
         proposal.setStartDate(parsed.startDate());
         proposal.setEndDate(parsed.endDate());
         proposal.setDurationMinutes(parsed.duration());
         proposal.setMessage(req == null ? null : req.message());
+        proposal.getSlots().clear();
         for (SlotRequest sr : req.slots()) {
             ScheduleProposalSlot slot = new ScheduleProposalSlot();
             slot.setProposal(proposal);
@@ -557,6 +585,107 @@ public class ScheduleService {
         return result;
     }
 
+    // ---------------- check-availability (manual input) ----------------
+
+    @Transactional(readOnly = true)
+    public com.okututor.backend.schedule.dto.CheckAvailabilityResponse checkAvailability(
+            User viewer, com.okututor.backend.schedule.dto.CheckAvailabilityRequest req) {
+        if (req == null || req.tutorId() == null) {
+            throw ApiException.validation("tutorId is required");
+        }
+        if (req.date() == null || req.date().isBlank() || req.startTime() == null || req.startTime().isBlank()
+                || req.endTime() == null || req.endTime().isBlank()) {
+            throw ApiException.validation("date, startTime and endTime are required");
+        }
+        LocalDate date = ScheduleParser.parseDate(req.date());
+        LocalTime start = ScheduleParser.parseTime(req.startTime());
+        LocalTime end = ScheduleParser.parseTime(req.endTime());
+        if (!end.isAfter(start)) {
+            throw ApiException.validation("endTime must be after startTime");
+        }
+        int duration = (int) ((end.toSecondOfDay() - start.toSecondOfDay()) / 60);
+        ZoneId zone = ScheduleParser.parseZone(req.timezone());
+        Instant startAt;
+        Instant endAt;
+        try {
+            startAt = date.atTime(start).atZone(zone).toInstant();
+            endAt = date.atTime(end).atZone(zone).toInstant();
+        } catch (java.time.DateTimeException e) {
+            throw ApiException.validation("Invalid date/time combination");
+        }
+        Instant now = Instant.now();
+        // TOO_SOON: меньше 2 часов до начала или в прошлом
+        if (!startAt.isAfter(now.plusSeconds(2 * 3600))) {
+            List<String> suggested = suggestNearbySlots(req.tutorId(), date, start, duration, zone, viewer);
+            return new com.okututor.backend.schedule.dto.CheckAvailabilityResponse(
+                    false, "TOO_SOON", "Слишком поздно бронировать (меньше 2 часов)", suggested);
+        }
+        // Доступность тьютора не проверяется — тьютор сам назначает время (требование: убрать OUTSIDE_AVAILABILITY)
+        // CONFLICT: проверяем пересечения у тьютора и у текущего пользователя (как студента)
+        List<Booking.Status> activeBookings = List.of(Booking.Status.PENDING, Booking.Status.CONFIRMED, Booking.Status.RESCHEDULED);
+        List<Lesson.Status> activeLessons = List.of(Lesson.Status.SCHEDULED, Lesson.Status.IN_PROGRESS);
+        boolean tutorBusy = bookingRepository.overlapsTeacher(req.tutorId(), activeBookings, startAt, endAt)
+                || lessonRepository.overlapsParticipant(req.tutorId(), activeLessons, startAt, endAt);
+        if (tutorBusy) {
+            List<String> suggested = suggestNearbySlots(req.tutorId(), date, start, duration, zone, viewer);
+            return new com.okututor.backend.schedule.dto.CheckAvailabilityResponse(
+                    false, "CONFLICT", "Это время уже занято", suggested);
+        }
+        // дополнительно проверяем студента (viewer), если он не тьютор
+        if (viewer != null && !viewer.getId().equals(req.tutorId())) {
+            boolean studentBusy = bookingRepository.overlapsStudent(viewer.getId(), activeBookings, startAt, endAt)
+                    || lessonRepository.overlapsParticipant(viewer.getId(), activeLessons, startAt, endAt);
+            if (studentBusy) {
+                List<String> suggested = suggestNearbySlots(req.tutorId(), date, start, duration, zone, viewer);
+                return new com.okututor.backend.schedule.dto.CheckAvailabilityResponse(
+                        false, "CONFLICT", "Пересекается с другим вашим уроком", suggested);
+            }
+            // также проверяем через overlapsParticipant (both roles)
+            boolean viewerBusy = lessonRepository.overlapsParticipant(viewer.getId(), activeLessons, startAt, endAt)
+                    || bookingRepository.overlapsStudent(viewer.getId(), activeBookings, startAt, endAt);
+            if (viewerBusy) {
+                // already handled, but keep
+            }
+        }
+        return new com.okututor.backend.schedule.dto.CheckAvailabilityResponse(true, "OK", "Свободно", List.of());
+    }
+
+    private List<String> suggestNearbySlots(UUID tutorId, LocalDate date, LocalTime requestedStart, int duration, ZoneId zone, User viewer) {
+        Instant now = Instant.now();
+        List<Booking.Status> activeBookings = List.of(Booking.Status.PENDING, Booking.Status.CONFIRMED, Booking.Status.RESCHEDULED);
+        List<Lesson.Status> activeLessons = List.of(Lesson.Status.SCHEDULED, Lesson.Status.IN_PROGRESS);
+        List<LocalTime> candidates = new ArrayList<>();
+        LocalTime cursor = LocalTime.of(9, 0);
+        LocalTime limit = LocalTime.of(22, 0);
+        while (!cursor.plusMinutes(duration).isAfter(limit)) {
+            if (!cursor.equals(requestedStart)) {
+                Instant candStart = date.atTime(cursor).atZone(zone).toInstant();
+                Instant candEnd = candStart.plusSeconds(duration * 60L);
+                if (candStart.isAfter(now.plusSeconds(2 * 3600))) {
+                    boolean busy = bookingRepository.overlapsTeacher(tutorId, activeBookings, candStart, candEnd)
+                            || lessonRepository.overlapsParticipant(tutorId, activeLessons, candStart, candEnd);
+                    if (viewer != null && !viewer.getId().equals(tutorId)) {
+                        busy = busy || bookingRepository.overlapsStudent(viewer.getId(), activeBookings, candStart, candEnd)
+                                || lessonRepository.overlapsParticipant(viewer.getId(), activeLessons, candStart, candEnd);
+                    }
+                    if (!busy) {
+                        candidates.add(cursor);
+                    }
+                }
+            }
+            cursor = cursor.plusMinutes(30);
+        }
+        // сортируем по близости к запрошенному времени
+        int reqMin = requestedStart.toSecondOfDay() / 60;
+        candidates.sort(java.util.Comparator.comparingInt(t -> Math.abs(t.toSecondOfDay() / 60 - reqMin)));
+        List<String> result = new ArrayList<>();
+        for (LocalTime t : candidates) {
+            result.add(DateTimeFormatter.ofPattern("HH:mm").format(t));
+            if (result.size() >= 3) break;
+        }
+        return result;
+    }
+
     // ---------------- generation ----------------
 
     private record Generated(int created, List<String> conflicted, List<UUID> bookings) {}
@@ -578,14 +707,7 @@ public class ScheduleService {
         UUID teacherId = schedule.getTutorId();
         Course course = schedule.getCourse();
 
-        Map<String, List<AvailabilitySlot>> availabilityByWeekday = new HashMap<>();
-        if (teacherId != null) {
-            for (AvailabilitySlot slot : availabilitySlotRepository
-                    .findByTutorIdOrderByWeekdayAscStartTimeAsc(teacherId)) {
-                availabilityByWeekday.computeIfAbsent(slot.getWeekday(), k -> new ArrayList<>()).add(slot);
-            }
-        }
-
+        // availabilityByWeekday не используется — тьютор сам назначает время (убрана проверка OUTSIDE_AVAILABILITY)
         Map<DayOfWeek, List<ScheduleSlot>> slotsByDay = new HashMap<>();
         for (ScheduleSlot slot : schedule.getSlots()) {
             slotsByDay.computeIfAbsent(slot.getWeekday(), k -> new ArrayList<>()).add(slot);
@@ -617,10 +739,6 @@ public class ScheduleService {
                 // дубликат внутри батча (например, два одинаковых слота)
                 if (!seenStarts.add(startAt)) {
                     conflicted.add(localDate + " (дубликат)");
-                    continue;
-                }
-                if (!coversZoneAware(availabilityByWeekday.get(caption), day, slot.getStartTime(), duration, zone)) {
-                    conflicted.add(localDate + " (нет доступности)");
                     continue;
                 }
                 boolean teacherBusy = teacherId != null

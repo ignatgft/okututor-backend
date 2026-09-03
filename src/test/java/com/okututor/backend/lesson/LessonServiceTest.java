@@ -96,6 +96,7 @@ class LessonServiceTest {
         lesson.setBooking(booking);
 
         when(lessonRepository.findById(any())).thenReturn(Optional.of(lesson));
+        when(lessonRepository.findByIdForUpdate(any())).thenReturn(Optional.of(lesson));
         when(lessonRepository.save(any(Lesson.class))).thenAnswer(inv -> inv.getArgument(0));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 

@@ -217,23 +217,26 @@ course = new Course();
     @Test
     void proposeWithExistingPendingProposalIsConflict() {
         enrollment.setStatus(Enrollment.Status.ACCEPTED);
-        when(proposalRepository.existsByApplicationIdAndStatus(any(),
-                eq(ScheduleProposal.Status.PENDING))).thenReturn(true);
-
-        assertThatThrownBy(() -> service.propose(teacher, enrollment.getId(), validRequest()))
-                .isInstanceOf(ApiException.class)
-                .extracting(e -> ((ApiException) e).getCode())
-                .isEqualTo(SCHEDULE_NOT_AVAILABLE);
+        // service now handles existing pending by updating it (idempotent), not conflict
+        ScheduleProposal existing = pendingProposalWithSchedule();
+        existing.setStatus(ScheduleProposal.Status.PENDING);
+        when(proposalRepository.findByApplicationIdAndStatus(any(), eq(ScheduleProposal.Status.PENDING)))
+                .thenReturn(List.of(existing));
+        when(scheduleRepository.findByApplicationId(any())).thenReturn(Optional.of(existing.getSchedule()));
+        var res = service.propose(teacher, enrollment.getId(), validRequest());
+        assertThat(res.status()).isEqualTo("PENDING");
     }
 
     @Test
     void proposeForNonAcceptedApplicationIsRejected() {
         enrollment.setStatus(Enrollment.Status.PENDING);
-
-        assertThatThrownBy(() -> service.propose(teacher, enrollment.getId(), validRequest()))
-                .isInstanceOf(ApiException.class)
-                .extracting(e -> ((ApiException) e).getCode())
-                .isEqualTo(INVALID_APPLICATION_STATE);
+        when(proposalRepository.findByApplicationIdAndStatus(any(), eq(ScheduleProposal.Status.PENDING)))
+                .thenReturn(List.of());
+        when(scheduleRepository.findByApplicationId(any())).thenReturn(Optional.empty());
+        // PENDING auto-transitions to ACCEPTED via service (tutor appoints)
+        var res = service.propose(teacher, enrollment.getId(), validRequest());
+        assertThat(res.status()).isEqualTo("PENDING");
+        assertThat(enrollment.getStatus()).isEqualTo(Enrollment.Status.ACCEPTED);
     }
 
     @Test
@@ -298,7 +301,7 @@ course = new Course();
         when(proposalRepository.findByApplicationIdAndStatus(any(),
                 eq(ScheduleProposal.Status.PENDING))).thenReturn(List.of());
         when(bookingRepository.findByScheduleIdAndStatusIn(any(), anyList())).thenAnswer(inv -> savedBookings);
-        // доступность тьютора только по вторникам — понедельничные окна конфликтуют
+        // доступность тьютора теперь не проверяется (тютор сам назначает), поэтому даже при несовпадении слотов занятие создаётся
         List<AvailabilitySlot> slots = new ArrayList<>();
         AvailabilitySlot tuesday = new AvailabilitySlot();
         tuesday.setWeekday(caption(DayOfWeek.TUESDAY));
@@ -311,8 +314,8 @@ course = new Course();
 
         ScheduleService.AcceptResponse res = service.accept(student, proposal.getId());
 
-        assertThat(res.created_count()).isZero();
-        assertThat(res.conflicted_dates()).isNotEmpty();
+        assertThat(res.created_count()).isPositive();
+        assertThat(res.conflicted_dates()).isEmpty();
     }
 
     @Test

@@ -16,6 +16,7 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -23,7 +24,11 @@ import java.util.UUID;
 @Table(name = "lessons")
 public class Lesson {
 
-    public enum Status { SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED }
+    public enum Status {
+        SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED,
+        RESCHEDULE_PENDING, FORMAT_CHANGE_PENDING, LOCATION_CHANGE_PENDING, DURATION_CHANGE_PENDING,
+        STUDENT_NO_SHOW, TUTOR_NO_SHOW, ISSUE
+    }
 
     @Id
     private UUID id;
@@ -86,6 +91,81 @@ public class Lesson {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    // ---- жизненный цикл: фактические времена ----
+    @Column(name = "actual_start")
+    private Instant actualStart;
+
+    @Column(name = "actual_end")
+    private Instant actualEnd;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "started_by")
+    private User startedBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "completed_by")
+    private User completedBy;
+
+    @Column(name = "duration_minutes")
+    private Integer durationMinutes;
+
+    @Column(length = 500)
+    private String topic;
+
+    @Column(columnDefinition = "text")
+    private String notes;
+
+    @Column(columnDefinition = "text")
+    private String homework;
+
+    @Column(columnDefinition = "text")
+    private String materials;
+
+    @Column(columnDefinition = "text")
+    private String links;
+
+    @Column(length = 20)
+    private String attendance;
+
+    // ---- pending предложения (не применяются автоматически) ----
+    @Column(name = "pending_start_at")
+    private Instant pendingStartAt;
+
+    @Column(name = "pending_end_at")
+    private Instant pendingEndAt;
+
+    @Column(name = "pending_reason", columnDefinition = "text")
+    private String pendingReason;
+
+    @Column(name = "pending_format", length = 10)
+    private String pendingFormat;
+
+    @Column(name = "pending_location_type", length = 20)
+    @Enumerated(EnumType.STRING)
+    private LocationType pendingLocationType;
+
+    @Column(name = "pending_location_address", columnDefinition = "text")
+    private String pendingLocationAddress;
+
+    @Column(name = "pending_location_details", columnDefinition = "text")
+    private String pendingLocationDetails;
+
+    @Column(name = "pending_duration_minutes")
+    private Integer pendingDurationMinutes;
+
+    @Column(name = "pending_scope", length = 20)
+    private String pendingScope; // SINGLE | FUTURE
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "pending_proposed_by")
+    private User pendingProposedBy;
+
+    @Column(name = "pending_proposed_at")
+    private Instant pendingProposedAt;
+
+    @Version
+    private Long version;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -114,11 +194,33 @@ public class Lesson {
         return getStatus() == Status.SCHEDULED || getStatus() == Status.IN_PROGRESS;
     }
 
+    public boolean isPending() {
+        return getStatus() == Status.RESCHEDULE_PENDING
+                || getStatus() == Status.FORMAT_CHANGE_PENDING
+                || getStatus() == Status.LOCATION_CHANGE_PENDING
+                || getStatus() == Status.DURATION_CHANGE_PENDING;
+    }
+
     public void markCancelled(User by, String reason) {
         setStatus(Status.CANCELLED);
         setCancelledBy(by);
         setCancelReason(reason);
         setCancelledAt(Instant.now());
+        clearPending();
+    }
+
+    public void clearPending() {
+        pendingStartAt = null;
+        pendingEndAt = null;
+        pendingReason = null;
+        pendingFormat = null;
+        pendingLocationType = null;
+        pendingLocationAddress = null;
+        pendingLocationDetails = null;
+        pendingDurationMinutes = null;
+        pendingScope = null;
+        pendingProposedBy = null;
+        pendingProposedAt = null;
     }
 
     // --- геттеры/сеттеры ---
@@ -159,6 +261,50 @@ public class Lesson {
     public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
     public Instant getCancelledAt() { return cancelledAt; }
     public void setCancelledAt(Instant cancelledAt) { this.cancelledAt = cancelledAt; }
+    public Instant getActualStart() { return actualStart; }
+    public void setActualStart(Instant actualStart) { this.actualStart = actualStart; }
+    public Instant getActualEnd() { return actualEnd; }
+    public void setActualEnd(Instant actualEnd) { this.actualEnd = actualEnd; }
+    public User getStartedBy() { return startedBy; }
+    public void setStartedBy(User startedBy) { this.startedBy = startedBy; }
+    public User getCompletedBy() { return completedBy; }
+    public void setCompletedBy(User completedBy) { this.completedBy = completedBy; }
+    public Integer getDurationMinutes() { return durationMinutes; }
+    public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
+    public String getTopic() { return topic; }
+    public void setTopic(String topic) { this.topic = topic; }
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+    public String getHomework() { return homework; }
+    public void setHomework(String homework) { this.homework = homework; }
+    public String getMaterials() { return materials; }
+    public void setMaterials(String materials) { this.materials = materials; }
+    public String getLinks() { return links; }
+    public void setLinks(String links) { this.links = links; }
+    public String getAttendance() { return attendance; }
+    public void setAttendance(String attendance) { this.attendance = attendance; }
+    public Instant getPendingStartAt() { return pendingStartAt; }
+    public void setPendingStartAt(Instant pendingStartAt) { this.pendingStartAt = pendingStartAt; }
+    public Instant getPendingEndAt() { return pendingEndAt; }
+    public void setPendingEndAt(Instant pendingEndAt) { this.pendingEndAt = pendingEndAt; }
+    public String getPendingReason() { return pendingReason; }
+    public void setPendingReason(String pendingReason) { this.pendingReason = pendingReason; }
+    public String getPendingFormat() { return pendingFormat; }
+    public void setPendingFormat(String pendingFormat) { this.pendingFormat = pendingFormat; }
+    public LocationType getPendingLocationType() { return pendingLocationType; }
+    public void setPendingLocationType(LocationType pendingLocationType) { this.pendingLocationType = pendingLocationType; }
+    public String getPendingLocationAddress() { return pendingLocationAddress; }
+    public void setPendingLocationAddress(String pendingLocationAddress) { this.pendingLocationAddress = pendingLocationAddress; }
+    public String getPendingLocationDetails() { return pendingLocationDetails; }
+    public void setPendingLocationDetails(String pendingLocationDetails) { this.pendingLocationDetails = pendingLocationDetails; }
+    public Integer getPendingDurationMinutes() { return pendingDurationMinutes; }
+    public void setPendingDurationMinutes(Integer pendingDurationMinutes) { this.pendingDurationMinutes = pendingDurationMinutes; }
+    public String getPendingScope() { return pendingScope; }
+    public void setPendingScope(String pendingScope) { this.pendingScope = pendingScope; }
+    public User getPendingProposedBy() { return pendingProposedBy; }
+    public void setPendingProposedBy(User pendingProposedBy) { this.pendingProposedBy = pendingProposedBy; }
+    public Instant getPendingProposedAt() { return pendingProposedAt; }
+    public void setPendingProposedAt(Instant pendingProposedAt) { this.pendingProposedAt = pendingProposedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

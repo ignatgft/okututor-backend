@@ -37,6 +37,10 @@ public interface LessonRepository extends JpaRepository<Lesson, UUID> {
     @Query("select l.status from Lesson l where l.booking.id = :bookingId")
     Optional<String> statusByBooking(@Param("bookingId") UUID bookingId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from Lesson l where l.id = :id")
+    Optional<Lesson> findByIdForUpdate(@Param("id") UUID id);
+
     // ---------- календарь ----------
     // Только «самостоятельные» уроки (без привязки к брони) — брони уже попадают
     // в календарь из bookings; join fetch снимает N+1 при маппинге CalendarItem.

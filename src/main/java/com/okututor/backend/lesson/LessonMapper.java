@@ -62,9 +62,9 @@ public class LessonMapper {
             timezone = student.getTimezone();
         }
 
-        // meetingRoomId
+        // meetingRoomId — только для ONLINE (LiveKit), для OFFLINE null
         String meetingRoomId = null;
-        if (booking != null) {
+        if (booking != null && !"OFFLINE".equals(format)) {
             meetingRoomId = LiveKitTokenService.roomName(booking.getId());
         }
 
@@ -72,6 +72,11 @@ public class LessonMapper {
         boolean canCancel = permissionEvaluator.canCancel(lesson, at);
         boolean canReschedule = permissionEvaluator.canReschedule(lesson, at);
         boolean canReview = viewerId != null ? permissionEvaluator.canReview(lesson, viewerId) : false;
+        boolean canStart = permissionEvaluator.canStart(lesson, viewerId, at);
+        boolean canComplete = permissionEvaluator.canComplete(lesson, viewerId, at);
+        boolean canMarkStudentNoShow = permissionEvaluator.canMarkStudentNoShow(lesson, viewerId, at);
+        boolean canMarkTutorNoShow = permissionEvaluator.canMarkTutorNoShow(lesson, viewerId, at);
+        boolean canReportIssue = permissionEvaluator.canReportIssue(lesson, viewerId);
 
         String cancelledBy = null;
         if (lesson.getCancelledBy() != null) {
@@ -84,7 +89,6 @@ public class LessonMapper {
         }
 
         String tutorAvatar = teacher != null ? teacher.getAvatarUrl() : null;
-        // ensure tutorAvatar null if empty
         if (tutorAvatar != null && tutorAvatar.isBlank()) tutorAvatar = null;
 
         return new LessonDTO(
@@ -107,8 +111,41 @@ public class LessonMapper {
                 canCancel,
                 canReschedule,
                 canReview,
+                canStart,
+                canComplete,
+                canMarkStudentNoShow,
+                canMarkTutorNoShow,
+                canReportIssue,
                 cancelledBy,
                 lesson.getCancelReason(),
+                lesson.getActualStart(),
+                lesson.getActualEnd(),
+                lesson.getDurationMinutes(),
+                lesson.getStartedBy() != null ? lesson.getStartedBy().getId() : null,
+                lesson.getCompletedBy() != null ? lesson.getCompletedBy().getId() : null,
+                lesson.getLocationType() != null ? lesson.getLocationType().name() : null,
+                lesson.getLocationAddress(),
+                lesson.getLocationDetails(),
+                lesson.getTopic(),
+                lesson.getNotes(),
+                lesson.getHomework(),
+                lesson.getMaterials(),
+                lesson.getLinks(),
+                lesson.getAttendance(),
+                lesson.getPendingStartAt(),
+                lesson.getPendingEndAt(),
+                lesson.getPendingReason(),
+                lesson.getPendingFormat(),
+                lesson.getPendingLocationType() != null ? lesson.getPendingLocationType().name() : null,
+                lesson.getPendingLocationAddress(),
+                lesson.getPendingLocationDetails(),
+                lesson.getPendingDurationMinutes(),
+                lesson.getPendingScope(),
+                lesson.getPendingProposedBy() != null ? lesson.getPendingProposedBy().getId() : null,
+                lesson.getPendingProposedAt(),
+                lesson.getSequenceNumber(),
+                lesson.getSchedule() != null ? lesson.getSchedule().getId() : null,
+                lesson.getBooking() != null ? lesson.getBooking().getId() : null,
                 lesson.getCreatedAt(),
                 lesson.getUpdatedAt()
         );

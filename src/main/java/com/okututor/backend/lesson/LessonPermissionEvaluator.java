@@ -30,6 +30,15 @@ public class LessonPermissionEvaluator {
         if (lesson == null || lesson.getStartAt() == null) return false;
         Lesson.Status status = lesson.getStatus();
         if (status != Lesson.Status.SCHEDULED && status != Lesson.Status.IN_PROGRESS) return false;
+        // OFFLINE занятия не имеют LiveKit комнаты — join только для ONLINE
+        // формат определяем по schedule.format или locationType; OFFLINE => нельзя войти в видео
+        boolean isOffline = false;
+        if (lesson.getSchedule() != null && lesson.getSchedule().getFormat() != null) {
+            isOffline = lesson.getSchedule().getFormat() == com.okututor.backend.schedule.Schedule.Format.OFFLINE;
+        } else if (lesson.getLocationType() != null) {
+            isOffline = true;
+        }
+        if (isOffline) return false;
 
         Instant start = lesson.getStartAt();
         Instant end = lesson.getEndAt() != null ? lesson.getEndAt() : start.plusSeconds(3600);
@@ -42,11 +51,9 @@ public class LessonPermissionEvaluator {
 
     public boolean canCancel(Lesson lesson, Instant now) {
         if (lesson == null || !lesson.isLive()) return false;
-        // уже началась — нельзя
         if (lesson.getStartAt() != null && !now.isBefore(lesson.getStartAt())) {
             return false;
         }
-        // проверка за X часов до начала
         int hours = properties.getLesson().getCancelHoursBefore();
         if (lesson.getStartAt() != null) {
             Instant threshold = lesson.getStartAt().minusSeconds(hours * 3600L);
@@ -66,6 +73,48 @@ public class LessonPermissionEvaluator {
             if (now.isAfter(threshold)) return false;
         }
         return lesson.getStatus() == Lesson.Status.SCHEDULED;
+    }
+
+    public boolean canStart(Lesson lesson, UUID viewerId, Instant now) {
+        if (lesson == null || viewerId == null) return false;
+        // только участники, и только тьютор может начать (ученик тоже может? по спеке — тьютор)
+        if (!viewerId.equals(lesson.getTeacherId()) && !viewerId.equals(lesson.getStudentId())) return false;
+        return lesson.getStatus() == Lesson.Status.SCHEDULED;
+    }
+
+    public boolean canComplete(Lesson lesson, UUID viewerId, Instant now) {
+        if (lesson == null || viewerId == null) return false;
+        if (!viewerId.equals(lesson.getTeacherId()) && !viewerId.equals(lesson.getStudentId())) return false;
+        return lesson.getStatus() == Lesson.Status.IN_PROGRESS;
+    }
+
+    public boolean canMarkStudentNoShow(Lesson lesson, UUID viewerId, Instant now) {
+        if (lesson == null || viewerId == null || now == null) return false;
+        if (!viewerId.equals(lesson.getTeacherId())) return false; // только тьютор
+        if (lesson.getStatus() != Lesson.Status.SCHEDULED) return false;
+        if (lesson.getStartAt() == null) return false;
+        int wait = properties.getLesson().getNoShowWaitMinutes();
+        Instant eligibleAt = lesson.getStartAt().plusSeconds(wait * 60L);
+        return !now.isBefore(eligibleAt);
+    }
+
+    public boolean canMarkTutorNoShow(Lesson lesson, UUID viewerId, Instant now) {
+        if (lesson == null || viewerId == null || now == null) return false;
+        if (!viewerId.equals(lesson.getStudentId())) return false; // только ученик
+        if (lesson.getStatus() != Lesson.Status.SCHEDULED) return false;
+        if (lesson.getStartAt() == null) return false;
+        int wait = properties.getLesson().getNoShowWaitMinutes();
+        Instant eligibleAt = lesson.getStartAt().plusSeconds(wait * 60L);
+        return !now.isBefore(eligibleAt);
+    }
+
+    public boolean canReportIssue(Lesson lesson, UUID viewerId) {
+        if (lesson == null || viewerId == null) return false;
+        if (!lesson.involves(viewerId)) return false;
+        // можно сообщить о проблеме в IN_PROGRESS или COMPLETED
+        return lesson.getStatus() == Lesson.Status.IN_PROGRESS
+                || lesson.getStatus() == Lesson.Status.COMPLETED
+                || lesson.getStatus() == Lesson.Status.SCHEDULED;
     }
 
     public boolean canReview(Lesson lesson, UUID viewerId) {

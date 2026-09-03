@@ -347,12 +347,22 @@ public class EnrollmentService {
         ScheduleParser.requireDuration(duration);
         Instant endAt = startAt.plusSeconds(duration * 60L);
 
-        // 3. Принять заявку (атомарно в одной транзакции с бронированием)
-        String old = enrollment.getStatus().name();
-        enrollment.transitionTo(Enrollment.Status.ACCEPTED);
-        repository.save(enrollment);
-        auditLogService.logSync(AuditEntry.of(teacher.getId(), "APPLICATION_ACCEPTED", "APPLICATION", enrollment.getId())
-                .withValues(old, Enrollment.Status.ACCEPTED.name()));
+        // 3. Принять заявку (атомарно) — идемпотентно, если уже ACCEPTED/SCHEDULE_*
+        if (enrollment.getStatus() != Enrollment.Status.ACCEPTED
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULE_PENDING
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULED) {
+            String old = enrollment.getStatus().name();
+            try {
+                enrollment.transitionTo(Enrollment.Status.ACCEPTED);
+            } catch (ApiException e) {
+                // уже в другом активном статусе — считаем принятой, не падаем
+                if (!Enrollment.ACTIVE_STATUSES.contains(enrollment.getStatus())) throw e;
+            }
+            repository.save(enrollment);
+            auditLogService.logSync(AuditEntry.of(teacher.getId(), "APPLICATION_ACCEPTED", "APPLICATION", enrollment.getId())
+                    .withValues(old, enrollment.getStatus().name()));
+        }
 
         // 4. Создать Booking со статусом CONFIRMED сразу
         Booking booking = new Booking();
@@ -444,12 +454,21 @@ public class EnrollmentService {
             }
         }
 
-        // принятие заявки атомарно с созданием серии (одна транзакция — нет частичного состояния)
-        String old = enrollment.getStatus().name();
-        enrollment.transitionTo(Enrollment.Status.ACCEPTED);
-        repository.save(enrollment);
-        auditLogService.logSync(AuditEntry.of(teacher.getId(), "APPLICATION_ACCEPTED", "APPLICATION", enrollment.getId())
-                .withValues(old, Enrollment.Status.ACCEPTED.name()));
+        // принятие заявки атомарно с созданием серии — идемпотентно
+        if (enrollment.getStatus() != Enrollment.Status.ACCEPTED
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULE_PENDING
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULE_PROPOSED
+                && enrollment.getStatus() != Enrollment.Status.SCHEDULED) {
+            String old = enrollment.getStatus().name();
+            try {
+                enrollment.transitionTo(Enrollment.Status.ACCEPTED);
+            } catch (ApiException e) {
+                if (!Enrollment.ACTIVE_STATUSES.contains(enrollment.getStatus())) throw e;
+            }
+            repository.save(enrollment);
+            auditLogService.logSync(AuditEntry.of(teacher.getId(), "APPLICATION_ACCEPTED", "APPLICATION", enrollment.getId())
+                    .withValues(old, enrollment.getStatus().name()));
+        }
 
         List<Booking> created = new ArrayList<>();
         List<String> conflicted = new ArrayList<>();
@@ -487,14 +506,13 @@ public class EnrollmentService {
                 }
                 Instant endAt = startAt.plusSeconds(duration * 60L);
 
-                // проверки: дата в будущем, доступность тьютора, конфликт преподавателя и ученика
+                // проверки: дата в будущем, конфликт преподавателя и ученика (доступность не проверяется — тьютор сам назначает)
                 boolean teacherBusy = teacherId != null
                         && bookingRepository.overlapsTeacher(teacherId, active, startAt, endAt);
                 boolean studentBusy = studentId != null
                         && bookingRepository.overlapsStudent(studentId, active, startAt, endAt);
 
                 if (!startAt.isAfter(Instant.now())
-                        || !coversZoneAware(slotsByWeekday.get(weekdayKey), current, time, duration, zone)
                         || teacherBusy
                         || studentBusy) {
                     conflicted.add(localDate);
@@ -542,7 +560,6 @@ public class EnrollmentService {
                 boolean studentBusy = studentId != null
                         && bookingRepository.overlapsStudent(studentId, active, startAt, endAt);
                 if (!startAt.isAfter(Instant.now())
-                        || !coversZoneAware(slotsByWeekday.get(weekdayKey), current, time, duration, zone)
                         || teacherBusy
                         || studentBusy) {
                     conflicted.add(localDate);
@@ -584,6 +601,16 @@ public class EnrollmentService {
                 lessons.add(lesson);
             }
             lessonRepository.saveAll(lessons);
+            // переводим заявку в SCHEDULED, чтобы появилась в Активных
+            try {
+                String prev = enrollment.getStatus().name();
+                enrollment.transitionTo(Enrollment.Status.SCHEDULED);
+                repository.save(enrollment);
+                auditLogService.logSync(AuditEntry.of(teacher.getId(), "APPLICATION_SCHEDULED", "APPLICATION", enrollment.getId()).withValues(prev, Enrollment.Status.SCHEDULED.name()));
+            } catch (ApiException e) {
+                // уже в SCHEDULED/COMPLETED — не падаем
+                if (!Enrollment.ACTIVE_STATUSES.contains(enrollment.getStatus()) && enrollment.getStatus() != Enrollment.Status.SCHEDULED) throw e;
+            }
         }
 
         ensureConversation(enrollment);

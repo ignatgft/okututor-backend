@@ -76,12 +76,13 @@ public class ScheduleMeController {
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(value = "startDate", required = false) String startDate,
             @RequestParam(value = "start_date", required = false) String startDate2,
+            @RequestParam(value = "start", required = false) String startAlias,
             @RequestParam(value = "date", required = false) String dateAlias,
             @RequestParam(value = "timezone", required = false) String tzParam,
             @RequestHeader(value = "X-Time-Zone", required = false) String tzHeader,
             @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
         User user = currentUser(principal);
-        String raw = startDate != null ? startDate : (startDate2 != null ? startDate2 : dateAlias);
+        String raw = startDate != null ? startDate : (startDate2 != null ? startDate2 : (startAlias != null ? startAlias : dateAlias));
         if (raw == null || raw.isBlank()) {
             throw ApiException.validation("startDate is required (yyyy-MM-dd)");
         }
