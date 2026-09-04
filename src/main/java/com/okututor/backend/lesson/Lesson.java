@@ -26,9 +26,13 @@ public class Lesson {
 
     public enum Status {
         SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED,
-        RESCHEDULE_PENDING, FORMAT_CHANGE_PENDING, LOCATION_CHANGE_PENDING, DURATION_CHANGE_PENDING,
+        /** предложено изменение урока; конкретный тип — в {@link PendingChangeType} (pending_change_type) */
+        CHANGE_PENDING,
         STUDENT_NO_SHOW, TUTOR_NO_SHOW, ISSUE
     }
+
+    /** тип предложенного изменения урока (см. pending_change_type). */
+    public enum PendingChangeType { RESCHEDULE, FORMAT, LOCATION, DURATION }
 
     @Id
     private UUID id;
@@ -156,6 +160,10 @@ public class Lesson {
     @Column(name = "pending_scope", length = 20)
     private String pendingScope; // SINGLE | FUTURE
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pending_change_type", length = 20)
+    private PendingChangeType pendingChangeType;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "pending_proposed_by")
     private User pendingProposedBy;
@@ -195,10 +203,7 @@ public class Lesson {
     }
 
     public boolean isPending() {
-        return getStatus() == Status.RESCHEDULE_PENDING
-                || getStatus() == Status.FORMAT_CHANGE_PENDING
-                || getStatus() == Status.LOCATION_CHANGE_PENDING
-                || getStatus() == Status.DURATION_CHANGE_PENDING;
+        return getStatus() == Status.CHANGE_PENDING;
     }
 
     public void markCancelled(User by, String reason) {
@@ -219,6 +224,7 @@ public class Lesson {
         pendingLocationDetails = null;
         pendingDurationMinutes = null;
         pendingScope = null;
+        pendingChangeType = null;
         pendingProposedBy = null;
         pendingProposedAt = null;
     }
@@ -301,6 +307,8 @@ public class Lesson {
     public void setPendingDurationMinutes(Integer pendingDurationMinutes) { this.pendingDurationMinutes = pendingDurationMinutes; }
     public String getPendingScope() { return pendingScope; }
     public void setPendingScope(String pendingScope) { this.pendingScope = pendingScope; }
+    public PendingChangeType getPendingChangeType() { return pendingChangeType; }
+    public void setPendingChangeType(PendingChangeType pendingChangeType) { this.pendingChangeType = pendingChangeType; }
     public User getPendingProposedBy() { return pendingProposedBy; }
     public void setPendingProposedBy(User pendingProposedBy) { this.pendingProposedBy = pendingProposedBy; }
     public Instant getPendingProposedAt() { return pendingProposedAt; }

@@ -209,10 +209,7 @@ public class LessonService {
     @Transactional
     public void cancel(User actor, UUID id, String reason) {
         Lesson lesson = requireParticipantViewForUpdate(id, actor);
-        if (!lesson.isLive() && lesson.getStatus() != Lesson.Status.RESCHEDULE_PENDING
-                && lesson.getStatus() != Lesson.Status.FORMAT_CHANGE_PENDING
-                && lesson.getStatus() != Lesson.Status.LOCATION_CHANGE_PENDING
-                && lesson.getStatus() != Lesson.Status.DURATION_CHANGE_PENDING) {
+        if (!lesson.isLive() && lesson.getStatus() != Lesson.Status.CHANGE_PENDING) {
             throw ApiException.conflict("Lesson is already finished or cancelled");
         }
         lesson.markCancelled(actor, reason);
@@ -248,7 +245,8 @@ public class LessonService {
         throwIfConflicts(lesson, newStart, exactEnd);
         String normalizedScope = normalizeScope(scope);
         // pending
-        lesson.setStatus(Lesson.Status.RESCHEDULE_PENDING);
+        lesson.setStatus(Lesson.Status.CHANGE_PENDING);
+        lesson.setPendingChangeType(Lesson.PendingChangeType.RESCHEDULE);
         lesson.setPendingStartAt(newStart);
         lesson.setPendingEndAt(exactEnd);
         lesson.setPendingReason(reason);
@@ -267,7 +265,9 @@ public class LessonService {
     @Transactional
     public Lesson acceptReschedule(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.RESCHEDULE_PENDING) throw ApiException.conflict("Lesson is not pending reschedule");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.RESCHEDULE)
+            throw ApiException.conflict("Lesson is not pending reschedule");
         // только другой участник (не автор предложения) или админ может принять
         if (lesson.getPendingProposedBy()!=null && lesson.getPendingProposedBy().getId().equals(actor.getId()) && !admin(actor)) {
             throw ApiException.forbidden("Cannot accept own proposal");
@@ -310,7 +310,9 @@ public class LessonService {
     @Transactional
     public Lesson rejectReschedule(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.RESCHEDULE_PENDING) throw ApiException.conflict("Lesson is not pending reschedule");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.RESCHEDULE)
+            throw ApiException.conflict("Lesson is not pending reschedule");
         lesson.setStatus(Lesson.Status.SCHEDULED);
         lesson.clearPending();
         lessonRepository.save(lesson);
@@ -331,7 +333,8 @@ public class LessonService {
             throw ApiException.validation("address is required for OFFLINE format");
         }
         String normalizedScope = normalizeScope(scope);
-        lesson.setStatus(Lesson.Status.FORMAT_CHANGE_PENDING);
+        lesson.setStatus(Lesson.Status.CHANGE_PENDING);
+        lesson.setPendingChangeType(Lesson.PendingChangeType.FORMAT);
         lesson.setPendingFormat(fmt);
         lesson.setPendingLocationType(locationType);
         lesson.setPendingLocationAddress(address);
@@ -348,7 +351,9 @@ public class LessonService {
     @Transactional
     public Lesson acceptFormatChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.FORMAT_CHANGE_PENDING) throw ApiException.conflict("Not pending format change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.FORMAT)
+            throw ApiException.conflict("Not pending format change");
         if (lesson.getPendingProposedBy()!=null && lesson.getPendingProposedBy().getId().equals(actor.getId()) && !admin(actor)) throw ApiException.forbidden("Cannot accept own proposal");
         String fmt = lesson.getPendingFormat();
         String scope = lesson.getPendingScope();
@@ -389,7 +394,9 @@ public class LessonService {
     @Transactional
     public Lesson rejectFormatChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.FORMAT_CHANGE_PENDING) throw ApiException.conflict("Not pending format change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.FORMAT)
+            throw ApiException.conflict("Not pending format change");
         lesson.setStatus(Lesson.Status.SCHEDULED);
         lesson.clearPending();
         lessonRepository.save(lesson);
@@ -404,7 +411,8 @@ public class LessonService {
         if (lesson.getStatus() != Lesson.Status.SCHEDULED) throw ApiException.conflict("Only SCHEDULED lessons can change location");
         if (type == null && (address==null || address.isBlank())) throw ApiException.validation("location is required");
         String normalizedScope = normalizeScope(scope);
-        lesson.setStatus(Lesson.Status.LOCATION_CHANGE_PENDING);
+        lesson.setStatus(Lesson.Status.CHANGE_PENDING);
+        lesson.setPendingChangeType(Lesson.PendingChangeType.LOCATION);
         lesson.setPendingLocationType(type);
         lesson.setPendingLocationAddress(address);
         lesson.setPendingLocationDetails(details);
@@ -420,7 +428,9 @@ public class LessonService {
     @Transactional
     public Lesson acceptLocationChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.LOCATION_CHANGE_PENDING) throw ApiException.conflict("Not pending location change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.LOCATION)
+            throw ApiException.conflict("Not pending location change");
         if (lesson.getPendingProposedBy()!=null && lesson.getPendingProposedBy().getId().equals(actor.getId()) && !admin(actor)) throw ApiException.forbidden("Cannot accept own proposal");
         String scope = lesson.getPendingScope();
         lesson.setLocationType(lesson.getPendingLocationType());
@@ -439,7 +449,9 @@ public class LessonService {
     @Transactional
     public Lesson rejectLocationChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.LOCATION_CHANGE_PENDING) throw ApiException.conflict("Not pending location change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.LOCATION)
+            throw ApiException.conflict("Not pending location change");
         lesson.setStatus(Lesson.Status.SCHEDULED);
         lesson.clearPending();
         lessonRepository.save(lesson);
@@ -456,7 +468,8 @@ public class LessonService {
         String normalizedScope = normalizeScope(scope);
         Instant newEnd = lesson.getStartAt()!=null ? lesson.getStartAt().plusSeconds(newDuration*60L) : null;
         if (newEnd != null) throwIfConflicts(lesson, lesson.getStartAt(), newEnd);
-        lesson.setStatus(Lesson.Status.DURATION_CHANGE_PENDING);
+        lesson.setStatus(Lesson.Status.CHANGE_PENDING);
+        lesson.setPendingChangeType(Lesson.PendingChangeType.DURATION);
         lesson.setPendingDurationMinutes(newDuration);
         lesson.setPendingEndAt(newEnd);
         lesson.setPendingScope(normalizedScope);
@@ -471,7 +484,9 @@ public class LessonService {
     @Transactional
     public Lesson acceptDurationChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.DURATION_CHANGE_PENDING) throw ApiException.conflict("Not pending duration change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.DURATION)
+            throw ApiException.conflict("Not pending duration change");
         if (lesson.getPendingProposedBy()!=null && lesson.getPendingProposedBy().getId().equals(actor.getId()) && !admin(actor)) throw ApiException.forbidden("Cannot accept own proposal");
         Integer newDur = lesson.getPendingDurationMinutes();
         String scope = lesson.getPendingScope();
@@ -497,7 +512,9 @@ public class LessonService {
     @Transactional
     public Lesson rejectDurationChange(User actor, UUID lessonId) {
         Lesson lesson = requireParticipantViewForUpdate(lessonId, actor);
-        if (lesson.getStatus() != Lesson.Status.DURATION_CHANGE_PENDING) throw ApiException.conflict("Not pending duration change");
+        if (lesson.getStatus() != Lesson.Status.CHANGE_PENDING
+                || lesson.getPendingChangeType() != Lesson.PendingChangeType.DURATION)
+            throw ApiException.conflict("Not pending duration change");
         lesson.setStatus(Lesson.Status.SCHEDULED);
         lesson.clearPending();
         lessonRepository.save(lesson);
@@ -724,7 +741,7 @@ public class LessonService {
     private void throwIfConflicts(Lesson lesson, Instant from, Instant to) {
         List<Booking.Status> activeBookings = List.of(Booking.Status.PENDING,
                 Booking.Status.CONFIRMED, Booking.Status.RESCHEDULED);
-        List<Lesson.Status> activeLessons = List.of(Lesson.Status.SCHEDULED, Lesson.Status.IN_PROGRESS, Lesson.Status.RESCHEDULE_PENDING, Lesson.Status.FORMAT_CHANGE_PENDING, Lesson.Status.LOCATION_CHANGE_PENDING, Lesson.Status.DURATION_CHANGE_PENDING);
+        List<Lesson.Status> activeLessons = List.of(Lesson.Status.SCHEDULED, Lesson.Status.IN_PROGRESS, Lesson.Status.CHANGE_PENDING);
         Booking booking = lesson.getBooking();
         UUID excludeBooking = booking != null ? booking.getId() : null;
 
@@ -753,8 +770,7 @@ public class LessonService {
             case IN_PROGRESS -> current == Lesson.Status.SCHEDULED;
             case COMPLETED -> current == Lesson.Status.IN_PROGRESS || current == Lesson.Status.SCHEDULED;
             case CANCELLED -> current == Lesson.Status.SCHEDULED || current == Lesson.Status.IN_PROGRESS
-                    || current == Lesson.Status.RESCHEDULE_PENDING || current == Lesson.Status.FORMAT_CHANGE_PENDING
-                    || current == Lesson.Status.LOCATION_CHANGE_PENDING || current == Lesson.Status.DURATION_CHANGE_PENDING;
+                    || current == Lesson.Status.CHANGE_PENDING;
             default -> false;
         };
         if (!allowed) {

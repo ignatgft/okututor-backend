@@ -17,7 +17,7 @@ CREATE INDEX idx_meeting_participants_identity ON meeting_participants(identity)
 
 -- защита от повторной доставки одного и того же вебхука (LiveKit at-least-once)
 CREATE TABLE livekit_webhook_events (
-    event_hash   char(64) PRIMARY KEY,
+    event_hash   varchar(64) PRIMARY KEY,
     room_name    varchar(120),
     event        varchar(64),
     received_at  timestamptz NOT NULL DEFAULT now()
