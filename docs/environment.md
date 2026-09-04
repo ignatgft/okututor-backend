@@ -33,7 +33,7 @@
 | `RESEND_API_KEY` | ключ SMTP Resend (вместо пароля) | опционально | YES |
 | `MAIL_SMTP_AUTH` / `MAIL_SMTP_STARTTLS` | параметры SMTP | true | true |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth2; пусто = вход отключён | optional | YES (отдельные креды для стейджинга) |
-| `LIVEKIT_WS_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | видеоуроки; секрет остаётся в backend, фронт получает только временные токены | optional | YES (если уроки включены) |
+| `LIVEKIT_WS_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | видеоуроки; секрет остаётся в backend, фронт получает только временные токены. Для локальной разработки рекомендуется dev-проект LiveKit Cloud (`wss://<project>.livekit.cloud`) вместо self-hosted: схема `wss://` работает из коробки. Self-hosted LiveKit на localhost использует `ws://localhost:7880` — `wss://` к localhost не подключится | optional | YES (если уроки включены) |
 | `SPRING_DATA_REDIS_HOST` / `_PORT` / `REDIS_PASSWORD` | rate-limit хранилище | localhost без пароля | YES с паролем |
 
 ## Seed (демо-данные)

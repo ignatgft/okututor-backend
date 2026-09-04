@@ -103,7 +103,9 @@ app:
   livekit:
     api-key: ${LIVEKIT_API_KEY:devkey}
     api-secret: ${LIVEKIT_API_SECRET:devsecret-change-me-012345678901234}
-    ws-url: ${LIVEKIT_WS_URL:wss://localhost:7880}
+    # dev-дефолт — локальный self-hosted LiveKit по ws://.
+    # Рекомендуемый путь — LiveKit Cloud: задайте LIVEKIT_WS_URL=wss://<project>.livekit.cloud
+    ws-url: ${LIVEKIT_WS_URL:ws://localhost:7880}
     token-ttl-minutes: 30
   mail:
     enabled: ${APP_MAIL_ENABLED:false}

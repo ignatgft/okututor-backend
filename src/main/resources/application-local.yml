@@ -23,7 +23,9 @@ app:
   livekit:
     api-key: devkey
     api-secret: devsecret-change-me-012345678901234
-    ws-url: wss://localhost:7880
+    # локальный self-hosted LiveKit говорит по ws://; wss:// к localhost не подключится.
+    # Рекомендуемый путь — LiveKit Cloud dev-проект: LIVEKIT_WS_URL=wss://<project>.livekit.cloud
+    ws-url: ws://localhost:7880
     token-ttl-minutes: 30
   mail:
     enabled: true
