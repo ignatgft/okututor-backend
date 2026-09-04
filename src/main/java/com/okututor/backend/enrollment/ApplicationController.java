@@ -133,17 +133,21 @@ public class ApplicationController {
 
     @PostMapping("/api/v1/applications/{id}/submit-info")
     @PreAuthorize("hasRole('STUDENT')")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Ответ ученика на запрос уточнений",
+            description = "Единственный канонический контракт: { \"message\": string }. "
+                    + "Поля request/question не поддерживаются — фронт должен слать только message.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
+            description = "Заявка переведена из NEEDS_INFO в PENDING")
     public EnrollmentService.EnrollmentResponse submitInfo(@AuthenticationPrincipal UserPrincipal principal,
                                                            @PathVariable UUID id,
-                                                           @RequestBody(required = false) Map<String, Object> body) {
-        String message = body == null ? null : firstNonBlank(
-                objToStr(body.get("message")), objToStr(body.get("request")), objToStr(body.get("question")));
-        return workflowService.submitInfo(currentUser(principal), id,
-                new ApplicationWorkflowService.SubmitInfoRequest(message));
+                                                           @RequestBody(required = false) ApplicationWorkflowService.SubmitInfoRequest request) {
+        return workflowService.submitInfo(currentUser(principal), id, request);
     }
 
     @PostMapping("/api/v1/applications/{id}/provide-info")
     @PreAuthorize("hasRole('STUDENT')")
+    @io.swagger.v3.oas.annotations.Operation(summary = "[deprecated alias] /applications/{id}/submit-info",
+            description = "Алиас того же действия: канонический контракт — POST /api/v1/applications/{id}/submit-info { \"message\": string }.")
     public EnrollmentService.EnrollmentResponse provideInfo(@AuthenticationPrincipal UserPrincipal principal,
                                                             @PathVariable UUID id,
                                                             @RequestBody(required = false) Map<String, Object> body) {

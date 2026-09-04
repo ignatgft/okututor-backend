@@ -45,6 +45,9 @@ public class EnrollmentCompatibilityController {
 
     @PostMapping("/api/v1/enrollments/{id}/submit-info")
     @PreAuthorize("hasRole('STUDENT')")
+    @io.swagger.v3.oas.annotations.Operation(summary = "[deprecated alias] /applications/{id}/submit-info",
+            description = "Алиас для старого фронта. Канонический контракт — "
+                    + "POST /api/v1/applications/{id}/submit-info с телом { \"message\": string }.")
     public EnrollmentService.EnrollmentResponse submitInfoAlias(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
