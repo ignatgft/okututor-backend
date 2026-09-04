@@ -54,6 +54,7 @@ public class AdminController {
     private final com.okututor.backend.enrollment.EnrollmentRepository enrollmentRepository;
     private final com.okututor.backend.tutors.TutorApplicationRepository tutorApplicationRepository;
     private final com.okututor.backend.review.ReviewRepository reviewRepository;
+    private final com.okututor.backend.lesson.LessonRepository lessonRepository;
     private final AuditLogService auditLog;
 
     public AdminController(CourseService courseService,
@@ -64,6 +65,7 @@ public class AdminController {
                            com.okututor.backend.enrollment.EnrollmentRepository enrollmentRepository,
                            com.okututor.backend.tutors.TutorApplicationRepository tutorApplicationRepository,
                            com.okututor.backend.review.ReviewRepository reviewRepository,
+                           com.okututor.backend.lesson.LessonRepository lessonRepository,
                            AuditLogService auditLog) {
         this.courseService = courseService;
         this.reviewService = reviewService;
@@ -73,6 +75,7 @@ public class AdminController {
         this.enrollmentRepository = enrollmentRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.reviewRepository = reviewRepository;
+        this.lessonRepository = lessonRepository;
         this.auditLog = auditLog;
     }
 
@@ -281,6 +284,83 @@ public class AdminController {
         auditLog.log(new AuditEntry(principal.id(), "REVIEW_RESTORE", "REVIEW", id.toString(), null));
         reviewService.setHidden(id, false);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------- метрики (adminApi.metrics) ----------
+
+    @GetMapping("/api/v1/admin/metrics/overview")
+    public Map<String, Object> metricsOverview() {
+        long tutors = tutorApplicationRepository.countByStatus(
+                com.okututor.backend.tutors.TutorApplication.Status.APPROVED);
+        return Map.of(
+                "total_users", userRepository.count(),
+                "total_tutors", userRepository.countByRole(Role.TUTOR),
+                "total_courses", courseService.countAll(),
+                "total_bookings", bookingRepository.count(),
+                "total_lessons", lessonRepository.count(),
+                "total_reviews", reviewRepository.count(),
+                "total_revenue", bookingRepository.revenueCompleted(),
+                "pending_tutor_applications", tutorApplicationRepository.countByStatus(
+                        com.okututor.backend.tutors.TutorApplication.Status.PENDING),
+                "pending_enrollments", enrollmentRepository.countByStatus(
+                        com.okututor.backend.enrollment.Enrollment.Status.PENDING));
+    }
+
+    @GetMapping("/api/v1/admin/metrics/users")
+    public Map<String, Object> metricsUsers(@RequestParam(name = "days", defaultValue = "30") int days) {
+        java.time.Instant from = java.time.Instant.now().minus(
+                java.time.Duration.ofDays(Math.max(days, 1)));
+        Map<String, Long> byRole = new java.util.LinkedHashMap<>();
+        for (Object[] row : userRepository.countGroupByRole()) {
+            byRole.put(((Role) row[0]).name(), (Long) row[1]);
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("total", userRepository.count());
+        result.put("by_role", byRole);
+        result.put("new_in_period", userRepository.countByCreatedAtAfter(from));
+        result.put("blocked", userRepository.countByBlocked(true));
+        result.put("verified", userRepository.countByVerified(true));
+        result.put("period_days", Math.max(days, 1));
+        return result;
+    }
+
+    @GetMapping("/api/v1/admin/metrics/lessons")
+    public Map<String, Object> metricsLessons(@RequestParam(name = "days", defaultValue = "30") int days) {
+        java.time.Instant from = java.time.Instant.now().minus(
+                java.time.Duration.ofDays(Math.max(days, 1)));
+        Map<String, Long> byStatus = new java.util.LinkedHashMap<>();
+        for (Object[] row : lessonRepository.countGroupByStatus()) {
+            byStatus.put(((com.okututor.backend.lesson.Lesson.Status) row[0]).name(), (Long) row[1]);
+        }
+        Map<String, Long> bookingsByStatus = new java.util.LinkedHashMap<>();
+        for (Object[] row : bookingRepository.countGroupByStatus()) {
+            bookingsByStatus.put(((com.okututor.backend.booking.Booking.Status) row[0]).name(), (Long) row[1]);
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("total", lessonRepository.count());
+        result.put("by_status", byStatus);
+        result.put("upcoming", lessonRepository.countByStartAtAfter(java.time.Instant.now()));
+        result.put("new_in_period", lessonRepository.countByCreatedAtAfter(from));
+        result.put("completed_minutes", lessonRepository.totalCompletedMinutes());
+        result.put("bookings_by_status", bookingsByStatus);
+        result.put("period_days", Math.max(days, 1));
+        return result;
+    }
+
+    @GetMapping("/api/v1/admin/metrics/revenue")
+    public Map<String, Object> metricsRevenue(@RequestParam(name = "days", defaultValue = "30") int days) {
+        java.time.Instant from = java.time.Instant.now().minus(
+                java.time.Duration.ofDays(Math.max(days, 1)));
+        java.math.BigDecimal total = bookingRepository.revenueCompleted();
+        java.math.BigDecimal inPeriod = bookingRepository.revenueCompletedSince(from);
+        return Map.of(
+                "total_revenue", total,
+                "revenue_in_period", inPeriod,
+                "completed_bookings", bookingRepository.countGroupByStatus().stream()
+                        .filter(row -> row[0] == com.okututor.backend.booking.Booking.Status.COMPLETED)
+                        .mapToLong(row -> (Long) row[1])
+                        .sum(),
+                "period_days", Math.max(days, 1));
     }
 
     // ---------- вспомогательные методы ----------

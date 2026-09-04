@@ -174,4 +174,16 @@ public interface LessonRepository extends JpaRepository<Lesson, UUID> {
             where l.id = :id
             """)
     java.util.Optional<Lesson> findByIdWithParticipants(@Param("id") UUID id);
+
+    // ---------- admin metrics ----------
+
+    @Query("select l.status, count(l) from Lesson l group by l.status")
+    java.util.List<Object[]> countGroupByStatus();
+
+    long countByStartAtAfter(java.time.Instant from);
+
+    long countByCreatedAtAfter(java.time.Instant from);
+
+    @Query("select coalesce(sum(l.durationMinutes), 0) from Lesson l where l.status = com.okututor.backend.lesson.Lesson.Status.COMPLETED")
+    long totalCompletedMinutes();
 }

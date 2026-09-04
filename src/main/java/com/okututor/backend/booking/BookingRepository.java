@@ -214,4 +214,21 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                                                @Param("statuses") Collection<Booking.Status> statuses);
 
     List<Booking> findByScheduleIdOrderByStartAtAsc(UUID scheduleId);
+
+    // ---------- admin metrics ----------
+
+    @Query("select b.status, count(b) from Booking b group by b.status")
+    List<Object[]> countGroupByStatus();
+
+    long countByCreatedAtAfter(Instant from);
+
+    /** выручка = сумма (длительность_часов * цена_курса) по завершённым броням. */
+    @Query("select coalesce(sum(b.durationMinutes * b.course.pricePerHour / 60.0), 0) " +
+            "from Booking b where b.status = com.okututor.backend.booking.Booking.Status.COMPLETED")
+    java.math.BigDecimal revenueCompleted();
+
+    @Query("select coalesce(sum(b.durationMinutes * b.course.pricePerHour / 60.0), 0) " +
+            "from Booking b where b.status = com.okututor.backend.booking.Booking.Status.COMPLETED " +
+            "and b.createdAt >= :from")
+    java.math.BigDecimal revenueCompletedSince(@Param("from") Instant from);
 }

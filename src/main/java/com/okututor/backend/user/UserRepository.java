@@ -34,4 +34,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                            @Param("role") Role role,
                            @Param("blocked") Boolean blocked,
                            Pageable pageable);
+
+    // ---------- admin metrics ----------
+
+    long countByRole(Role role);
+
+    long countByBlocked(Boolean blocked);
+
+    long countByVerified(Boolean verified);
+
+    long countByCreatedAtAfter(java.time.Instant from);
+
+    @Query("select u.role, count(u) from User u group by u.role")
+    java.util.List<Object[]> countGroupByRole();
 }
