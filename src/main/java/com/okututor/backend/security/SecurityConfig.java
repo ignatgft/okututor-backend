@@ -32,7 +32,9 @@ public class SecurityConfig {
             "/api/v1/auth/reset-password",
             "/api/v1/auth/verify-email",
             "/api/v1/auth/resend-verification",
-            "/api/v1/auth/verify-reset-code"
+            "/api/v1/auth/verify-reset-code",
+            // вебхук LiveKit: аутентификация подписью JWT в самом запросе (см. LiveKitWebhookService)
+            "/api/v1/livekit/webhook"
     };
 
     private static final String[] PUBLIC_GET = {

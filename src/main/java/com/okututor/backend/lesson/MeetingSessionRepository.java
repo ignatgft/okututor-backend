@@ -10,6 +10,8 @@ public interface MeetingSessionRepository extends JpaRepository<MeetingSession, 
 
     Optional<MeetingSession> findByBookingId(UUID bookingId);
 
+    Optional<MeetingSession> findByRoomName(String roomName);
+
     @Query(value = """
         select case when count(ms.id) > 0 then true else false end
         from meeting_sessions ms

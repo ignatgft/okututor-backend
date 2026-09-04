@@ -30,6 +30,10 @@ public class MeetingSession {
     @Column(name = "token_issued_at")
     private Instant tokenIssuedAt;
 
+    /** факт из вебхука LiveKit (room_finished / participant_left), не ручное действие. */
+    @Column(name = "webhook_event_at")
+    private Instant webhookEventAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -58,4 +62,6 @@ public class MeetingSession {
     public void setEndedAt(Instant endedAt) { this.endedAt = endedAt; }
     public Instant getTokenIssuedAt() { return tokenIssuedAt; }
     public void setTokenIssuedAt(Instant tokenIssuedAt) { this.tokenIssuedAt = tokenIssuedAt; }
+    public Instant getWebhookEventAt() { return webhookEventAt; }
+    public void setWebhookEventAt(Instant webhookEventAt) { this.webhookEventAt = webhookEventAt; }
 }
